@@ -19,18 +19,18 @@ import json
 import warnings
 import os
 
-# Suppress SyntaxWarnings from pysbd
+# 3. Suppress SyntaxWarnings from pysbd
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-# 3. Verify sqlite3 version
+# 4. Verify sqlite3 version
 import sqlite3
 st.write(f"**SQLite version:** {sqlite3.sqlite_version}")
 
-# 4. Streamlit UI Setup
+# 5. Streamlit UI Setup
 st.title("CrewAI Task Manager")
 st.sidebar.title("Configuration")
 
-# 5. API Key Inputs
+# 6. API Key Inputs
 openai_key = st.sidebar.text_input("OpenAI API Key:", type="password")
 serper_key = st.sidebar.text_input("Serper API Key:", type="password")
 
@@ -38,13 +38,13 @@ if openai_key and serper_key:
     os.environ["OPENAI_API_KEY"] = openai_key
     os.environ["SERPER_API_KEY"] = serper_key
 
-    # 6. Model Selection
+    # 7. Model Selection
     model_choice = st.sidebar.radio(
         "Choose a model:",
         ("Cheaper option (GPT-3.5)", "Costlier option (GPT-4)")
     )
 
-    # 7. LLM Setup
+    # 8. LLM Setup
     model = "gpt-3.5-turbo" if model_choice == "Cheaper option (GPT-3.5)" else "gpt-4"
     llm = ChatOpenAI(
         model_name=model,
@@ -52,10 +52,10 @@ if openai_key and serper_key:
         max_tokens=300
     )
 
-    # 8. SerperDevTool Setup
+    # 9. SerperDevTool Setup
     search = SerperDevTool(api_key=serper_key)
 
-    # 9. Define Agents
+    # 10. Define Agents
     agents = {
         "Real Estate Research Agent": Agent(
             llm=llm,
@@ -93,16 +93,16 @@ if openai_key and serper_key:
         ),
     }
 
-    # 10. Define Tasks
+    # 11. Define Tasks
     tasks = {
         "Advanced Market Research for Premium Locations": Task(
             description=(
                 "Conduct advanced research for properties near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district."
             ),
             expected_output=(
-                "List all the best properties (with accurate links for each of them) that are near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district based on your search."
+                "A Pandas DataFrame containing property details such as name, price, location, and link."
             ),
-            output_file="advanced_market_research_report.txt",
+            output_file="advanced_market_research_report.xlsx",
             agent=agents["Real Estate Research Agent"],
         ),
         "Furniture Storytelling": Task(
@@ -135,7 +135,7 @@ if openai_key and serper_key:
         ),
     }
 
-    # 11. Sidebar: Run Selected Tasks
+    # 12. Sidebar: Run Selected Tasks
     st.sidebar.header("Run Selected Tasks")
     selected_tasks = st.sidebar.multiselect(
         "Select tasks to run:",
@@ -233,7 +233,7 @@ if openai_key and serper_key:
         else:
             st.warning("Please select at least one task to run.")
 
-    # 12. Sidebar: Ask Additional Questions
+    # 13. Sidebar: Ask Additional Questions
     st.sidebar.header("Ask Additional Questions")
     ask_question = st.sidebar.checkbox("Do you want to ask a specific question to an agent?")
 
