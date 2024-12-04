@@ -100,7 +100,7 @@ if openai_key and serper_key:
                 "Conduct advanced research for properties near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district."
             ),
             expected_output=(
-                "A Pandas DataFrame containing property details such as name, price, location, and link."
+                "Return a list of dictionaries, each containing 'Property Name', 'Price', 'Location', and 'Link'. This structure can be easily converted into a Pandas DataFrame."
             ),
             output_file="advanced_market_research_report.xlsx",
             agent=agents["Real Estate Research Agent"],
@@ -158,46 +158,14 @@ if openai_key and serper_key:
                 st.success("Tasks completed successfully!")
 
                 # 13. Handle CrewOutput properly
-                if hasattr(crew_output, 'tasks_output'):
-                    for task_output in crew_output.tasks_output:
-                        # Debugging: Inspect TaskOutput attributes
-                        st.write("### Task Output Debugging")
-                        st.write(task_output)  # Display the TaskOutput object
-                        st.write(dir(task_output))  # List all attributes
-
-                        # Adjust attribute access based on actual TaskOutput structure
-                        # For example, if task_output.task.name exists
-                        try:
-                            task_name = task_output.task.name  # Adjust if necessary
-                        except AttributeError:
-                            try:
-                                task_name = task_output.task_title  # Alternative attribute
-                            except AttributeError:
-                                task_name = "Unknown Task"
-
+                if hasattr(crew_output, 'tasks_output') and isinstance(crew_output.tasks_output, list):
+                    for task_name, task_output in zip(selected_tasks, crew_output.tasks_output):
                         output = task_output.output
 
                         st.write(f"### {task_name} Output:")
 
-                        # Check if output is a Pandas DataFrame
-                        if isinstance(output, pd.DataFrame):
-                            st.dataframe(output)
-
-                            # Convert DataFrame to Excel in memory
-                            excel_buffer = BytesIO()
-                            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                                output.to_excel(writer, index=False, sheet_name='Sheet1')
-                                writer.save()
-                            excel_buffer.seek(0)
-
-                            # Provide download button for Excel file
-                            st.download_button(
-                                label=f"Download {task_name} as Excel",
-                                data=excel_buffer,
-                                file_name=tasks.get(task_name, Task()).output_file,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                        elif isinstance(output, str):
+                        # Check the output format
+                        if task_output.output_format == "raw":
                             st.write(output)
 
                             # Provide download button for Text file
@@ -207,20 +175,82 @@ if openai_key and serper_key:
                                 file_name=tasks.get(task_name, Task()).output_file,
                                 mime="text/plain"
                             )
-                        else:
-                            # For other types, serialize to JSON
-                            json_output = json.dumps(output, indent=4)
-                            st.json(output)
+                        elif task_output.output_format == "json":
+                            if isinstance(output, list):
+                                # Attempt to convert list of dicts to DataFrame
+                                try:
+                                    df = pd.DataFrame(output)
+                                    st.dataframe(df)
 
-                            # Provide download button for JSON file
-                            st.download_button(
-                                label=f"Download {task_name} as JSON",
-                                data=json_output,
-                                file_name=tasks.get(task_name, Task()).output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
-                                mime="application/json"
-                            )
+                                    # Convert DataFrame to Excel in memory
+                                    excel_buffer = BytesIO()
+                                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                                        df.to_excel(writer, index=False, sheet_name='Sheet1')
+                                    excel_buffer.seek(0)
+
+                                    # Provide download button for Excel file
+                                    st.download_button(
+                                        label=f"Download {task_name} as Excel",
+                                        data=excel_buffer,
+                                        file_name=tasks.get(task_name, Task()).output_file,
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
+                                except Exception as e:
+                                    st.error(f"Failed to convert JSON to DataFrame for {task_name}: {e}")
+
+                                    # Provide download button for JSON file
+                                    json_output = json.dumps(output, indent=4)
+                                    st.download_button(
+                                        label=f"Download {task_name} as JSON",
+                                        data=json_output,
+                                        file_name=tasks.get(task_name, Task()).output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
+                                        mime="application/json"
+                                    )
+                            elif isinstance(output, dict):
+                                st.json(output)
+
+                                # Provide download button for JSON file
+                                json_output = json.dumps(output, indent=4)
+                                st.download_button(
+                                    label=f"Download {task_name} as JSON",
+                                    data=json_output,
+                                    file_name=tasks.get(task_name, Task()).output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
+                                    mime="application/json"
+                                )
+                            else:
+                                st.write(output)
+
+                                # Provide download button for JSON file
+                                json_output = json.dumps(output, indent=4)
+                                st.download_button(
+                                    label=f"Download {task_name} as JSON",
+                                    data=json_output,
+                                    file_name=tasks.get(task_name, Task()).output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
+                                    mime="application/json"
+                                )
+                        elif task_output.output_format == "pandas":
+                            if isinstance(output, pd.DataFrame):
+                                st.dataframe(output)
+
+                                # Convert DataFrame to Excel in memory
+                                excel_buffer = BytesIO()
+                                with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                                    output.to_excel(writer, index=False, sheet_name='Sheet1')
+                                excel_buffer.seek(0)
+
+                                # Provide download button for Excel file
+                                st.download_button(
+                                    label=f"Download {task_name} as Excel",
+                                    data=excel_buffer,
+                                    file_name=tasks.get(task_name, Task()).output_file,
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                )
+                            else:
+                                st.error(f"The output for {task_name} is not a Pandas DataFrame.")
+                        else:
+                            st.error(f"Unknown output format for {task_name}: {task_output.output_format}")
                 else:
-                    st.error("No task outputs found in CrewOutput.")
+                    st.error("No task outputs found in CrewOutput or tasks_output is not a list.")
             except Exception as e:
                 st.error(f"An error occurred while executing tasks: {e}")
         else:
