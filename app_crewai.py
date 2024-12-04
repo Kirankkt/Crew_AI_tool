@@ -2,7 +2,6 @@ import pysqlite3
 import sys
 sys.modules['sqlite3'] = pysqlite3
 
-
 import streamlit as st
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
@@ -31,7 +30,8 @@ if openai_key and serper_key:
     model = "gpt-3.5-turbo" if model_choice == "Cheaper option (GPT-3.5)" else "gpt-4"
     llm = OpenAI_LLM(
         model=model,
-        params={"temperature": 0.2, "max_tokens": 300}
+        temperature=0.2,
+        max_tokens=300
     )
 
     # SerperDevTool Setup
@@ -99,7 +99,7 @@ if openai_key and serper_key:
 
     # Task Execution
     if st.button("Run Selected Tasks"):
-        selected_tasks = [tasks[task_name] for task_name, agent in agents.items() if agent in selected_agents]
+        selected_tasks = [tasks[task_name] for task_name in selected_agents if task_name in tasks]
 
         if selected_tasks:
             crew = Crew(
@@ -125,7 +125,12 @@ if openai_key and serper_key:
             "Which agent should answer your question?",
             options=list(agents.keys())
         )
-        response = agents[selected_agent].llm.chat(additional_question)
+        response = agents[selected_agent].llm(additional_question)
+        
+        # If response is a LangChain object, extract the text
+        if hasattr(response, 'generations'):
+            response = response.generations[0][0].text
+        
         st.write("**Agent's Response:**")
         st.write(response)
 
