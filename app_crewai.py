@@ -1,13 +1,18 @@
 import pysqlite3
 import sys
-sys.modules['sqlite3'] = pysqlite3
-
 import streamlit as st
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
 import os
+import warnings
+
+# Suppress SyntaxWarnings from pysbd
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
+# Override the default sqlite3 with pysqlite3
+sys.modules['sqlite3'] = pysqlite3
 
 # Streamlit UI Setup
 st.title("CrewAI Task Manager")
@@ -27,16 +32,9 @@ if openai_key and serper_key:
         ("Cheaper option (GPT-3.5)", "Costlier option (GPT-4)")
     )
 
-    # LLM Setup for Agents
+    # LLM Setup
     model = "gpt-3.5-turbo" if model_choice == "Cheaper option (GPT-3.5)" else "gpt-4"
-    agent_llm = ChatOpenAI(
-        model_name=model,
-        temperature=0.2,
-        max_tokens=300
-    )
-
-    # LLM Setup for Additional Questions
-    question_llm = ChatOpenAI(
+    llm = ChatOpenAI(
         model_name=model,
         temperature=0.2,
         max_tokens=300
@@ -48,7 +46,7 @@ if openai_key and serper_key:
     # Define Agents
     agents = {
         "Real Estate Research Agent": Agent(
-            llm=agent_llm,
+            llm=llm,
             role="Senior Real Estate Researcher",
             goal="Find promising properties for sale (not rent) near water bodies in Trivandrum district.",
             backstory="Veteran Real Estate Agent with 50 years of experience.",
@@ -57,7 +55,7 @@ if openai_key and serper_key:
             verbose=1,
         ),
         "Furniture Storytelling Agent": Agent(
-            llm=agent_llm,
+            llm=llm,
             role="Furniture Storyteller",
             goal="Create engaging stories for handcrafted Kerala furniture, emphasizing cultural heritage.",
             backstory="Specialist in Kerala's history and storytelling.",
@@ -65,7 +63,7 @@ if openai_key and serper_key:
             verbose=1,
         ),
         "Website Design Insight Agent": Agent(
-            llm=agent_llm,
+            llm=llm,
             role="Website Design Consultant",
             goal="Analyze top real estate and furniture websites for NRI appeal.",
             backstory="Digital marketing expert specializing in user experience for global clients.",
@@ -74,7 +72,7 @@ if openai_key and serper_key:
             verbose=1,
         ),
         "Financial Reporting Agent": Agent(
-            llm=agent_llm,
+            llm=llm,
             role="Financial Manager",
             goal="Calculate monthly expenses, profitability, and cost analysis for the business.",
             backstory="An accounting genius with a knack for analyzing financial data.",
@@ -86,8 +84,12 @@ if openai_key and serper_key:
     # Define Tasks
     tasks = {
         "Advanced Market Research for Premium Locations": Task(
-            description="Conduct advanced research for properties near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district.",
-            expected_output="List all the best properties (with accurate links for each of them) that are near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district based on your search.",
+            description=(
+                "Conduct advanced research for properties near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district."
+            ),
+            expected_output=(
+                "List all the best properties (with accurate links for each of them) that are near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district based on your search."
+            ),
             output_file="advanced_market_research_report.txt",
             agent=agents["Real Estate Research Agent"],
         ),
@@ -121,54 +123,67 @@ if openai_key and serper_key:
         ),
     }
 
-    # Agent Selection for Tasks
-    st.sidebar.header("Select Agents for Tasks")
-    selected_agents = st.sidebar.multiselect(
-        "Which agents do you want to run?",
-        options=list(agents.keys()),
-        default=list(agents.keys())
+    # Sidebar: Run Selected Tasks
+    st.sidebar.header("Run Selected Tasks")
+    selected_tasks = st.sidebar.multiselect(
+        "Select tasks to run:",
+        options=list(tasks.keys()),
+        default=list(tasks.keys())
     )
 
-    # Task Execution
-    if st.button("Run Selected Tasks"):
-        selected_tasks = [tasks[task_name] for task_name in selected_agents if task_name in tasks]
-
+    if st.sidebar.button("Run Selected Tasks"):
         if selected_tasks:
+            selected_task_objects = [tasks[task_name] for task_name in selected_tasks]
             crew = Crew(
-                agents=[agents[name] for name in selected_agents],
-                tasks=selected_tasks,
+                agents=[task.agent for task in selected_task_objects],
+                tasks=selected_task_objects,
                 verbose=1
             )
-            st.write("Executing tasks...")
+            st.write("Executing selected tasks...")
             try:
                 results = crew.kickoff()
-                st.success("Tasks completed!")
-                for name, output in results.items():
-                    st.write(f"**{name} Output:**")
+                st.success("Tasks completed successfully!")
+                for task_name, output in results.items():
+                    st.write(f"**{task_name} Output:**")
                     st.write(output)
             except Exception as e:
                 st.error(f"An error occurred while executing tasks: {e}")
         else:
-            st.warning("Please select at least one agent to run.")
+            st.warning("Please select at least one task to run.")
 
-    # Additional Questions
+    # Sidebar: Ask Additional Questions
     st.sidebar.header("Ask Additional Questions")
-    additional_question = st.sidebar.text_input("Type your question here:")
-
-    if additional_question and st.sidebar.button("Ask Question"):
-        selected_agent = st.sidebar.selectbox(
-            "Which agent should answer your question?",
+    ask_question = st.sidebar.checkbox("Do you want to ask a specific question to an agent?")
+    
+    if ask_question:
+        selected_agent_for_question = st.sidebar.selectbox(
+            "Select an agent to ask a question:",
             options=list(agents.keys())
         )
-        try:
-            # Construct the message
-            message = HumanMessage(content=additional_question)
-            # Get response from the question LLM
-            response = question_llm([message]).content
-            st.write("**Agent's Response:**")
-            st.write(response)
-        except Exception as e:
-            st.error(f"An error occurred while processing your question: {e}")
+        additional_question = st.sidebar.text_input("Type your question here:")
+
+        if st.sidebar.button("Ask Question"):
+            if additional_question.strip() == "":
+                st.warning("Please enter a question to proceed.")
+            else:
+                try:
+                    # Integrate the additional question into the agent's context
+                    # This can be done by appending the question to the agent's goal or sending it as a separate prompt
+                    # Here, we'll send it as a separate prompt for simplicity
+
+                    # Construct the message
+                    message = HumanMessage(content=additional_question)
+                    
+                    # Get response from the agent's LLM
+                    response = agents[selected_agent_for_question].llm([message]).content
+
+                    st.write("**Agent's Response:**")
+                    st.write(response)
+                except Exception as e:
+                    st.error(f"An error occurred while processing your question: {e}")
+
+    else:
+        st.info("You can run predefined tasks or choose to ask specific questions to agents.")
 
 else:
     st.warning("Please enter both OpenAI and Serper API keys to proceed.")
