@@ -161,23 +161,74 @@ if openai_key and serper_key:
                 if hasattr(crew_output, 'tasks_output') and isinstance(crew_output.tasks_output, list):
                     for task_name, task_output in zip(selected_tasks, crew_output.tasks_output):
                         output = task_output.output
+                        output_format = task_output.output_format
 
                         st.write(f"### {task_name} Output:")
 
-                        # Check the output format
-                        if task_output.output_format == "raw":
-                            st.write(output)
+                        if output_format == "raw":
+                            # Attempt to parse the raw output into structured data
+                            try:
+                                # Split the raw output by '---' to separate entries
+                                entries = output.split('---')
+                                data = []
+                                for entry in entries:
+                                    if entry.strip() == "":
+                                        continue
+                                    # Extract Title, Link, Snippet using string operations
+                                    lines = entry.strip().split('\n')
+                                    entry_dict = {}
+                                    for line in lines:
+                                        if line.startswith("Title:"):
+                                            entry_dict['Property Name'] = line.replace("Title:", "").strip()
+                                        elif line.startswith("Link:"):
+                                            entry_dict['Link'] = line.replace("Link:", "").strip()
+                                        elif line.startswith("Snippet:"):
+                                            entry_dict['Price'] = "N/A"  # Price is not directly provided in snippets
+                                            entry_dict['Location'] = "Trivandrum"  # Assuming location from task
+                                            entry_dict['Snippet'] = line.replace("Snippet:", "").strip()
+                                    if entry_dict:
+                                        data.append(entry_dict)
+                                
+                                if data:
+                                    df = pd.DataFrame(data)
+                                    st.dataframe(df)
 
-                            # Provide download button for Text file
-                            st.download_button(
-                                label=f"Download {task_name} as Text",
-                                data=output,
-                                file_name=tasks.get(task_name, Task()).output_file,
-                                mime="text/plain"
-                            )
-                        elif task_output.output_format == "json":
+                                    # Convert DataFrame to Excel in memory
+                                    excel_buffer = BytesIO()
+                                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                                        df.to_excel(writer, index=False, sheet_name='Sheet1')
+                                    excel_buffer.seek(0)
+
+                                    # Provide download button for Excel file
+                                    st.download_button(
+                                        label=f"Download {task_name} as Excel",
+                                        data=excel_buffer,
+                                        file_name=tasks.get(task_name, Task()).output_file,
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                                    )
+                                else:
+                                    st.write("No structured data found in the raw output.")
+                                    st.write(output)
+
+                                    # Provide download button for Text file
+                                    st.download_button(
+                                        label=f"Download {task_name} as Text",
+                                        data=output,
+                                        file_name=tasks.get(task_name, Task()).output_file,
+                                        mime="text/plain"
+                                    )
+                            except Exception as e:
+                                st.error(f"Error parsing raw output for {task_name}: {e}")
+
+                                # Provide download button for Text file
+                                st.download_button(
+                                    label=f"Download {task_name} as Text",
+                                    data=output,
+                                    file_name=tasks.get(task_name, Task()).output_file,
+                                    mime="text/plain"
+                                )
+                        elif output_format == "json":
                             if isinstance(output, list):
-                                # Attempt to convert list of dicts to DataFrame
                                 try:
                                     df = pd.DataFrame(output)
                                     st.dataframe(df)
@@ -228,7 +279,7 @@ if openai_key and serper_key:
                                     file_name=tasks.get(task_name, Task()).output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
                                     mime="application/json"
                                 )
-                        elif task_output.output_format == "pandas":
+                        elif output_format == "pandas":
                             if isinstance(output, pd.DataFrame):
                                 st.dataframe(output)
 
