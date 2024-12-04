@@ -151,89 +151,66 @@ if openai_key and serper_key:
                 tasks=selected_task_objects,
                 verbose=1
             )
-            st.write("Executing selected tasks...")
             try:
-                results = crew.kickoff()
+                with st.spinner("Executing selected tasks..."):
+                    crew_output = crew.kickoff()
 
-                # Handle CrewOutput properly
-                if hasattr(results, 'to_dict'):
-                    results_dict = results.to_dict()
-                    st.success("Tasks completed successfully!")
-                    for task_name, output in results_dict.items():
-                        st.write(f"**{task_name} Output:**")
+                st.success("Tasks completed successfully!")
+
+                # 13. Handle CrewOutput properly
+                # Access individual task outputs
+                for task_output in crew_output.tasks_output:
+                    task_name = task_output.task_name
+                    output = task_output.output
+
+                    st.write(f"### {task_name} Output:")
+
+                    # Check if output is a Pandas DataFrame
+                    if isinstance(output, pd.DataFrame):
+                        st.dataframe(output)
+
+                        # Convert DataFrame to Excel in memory
+                        excel_buffer = BytesIO()
+                        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                            output.to_excel(writer, index=False, sheet_name='Sheet1')
+                            writer.save()
+                        excel_buffer.seek(0)
+
+                        # Provide download button for Excel file
+                        st.download_button(
+                            label=f"Download {task_name} as Excel",
+                            data=excel_buffer,
+                            file_name=tasks[task_name].output_file,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                    elif isinstance(output, str):
                         st.write(output)
 
-                        # Provide download link based on output type
-                        if isinstance(output, str):
-                            st.download_button(
-                                label=f"Download {task_name} Output as Text",
-                                data=output,
-                                file_name=f"{task_name.replace(' ', '_')}_output.txt",
-                                mime="text/plain"
-                            )
-                        elif isinstance(output, pd.DataFrame):
-                            excel_buffer = BytesIO()
-                            output.to_excel(excel_buffer, index=False)
-                            excel_buffer.seek(0)
-                            st.download_button(
-                                label=f"Download {task_name} Output as Excel",
-                                data=excel_buffer,
-                                file_name=f"{task_name.replace(' ', '_')}_output.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                        else:
-                            # For other types, provide JSON download
-                            json_data = json.dumps(output, indent=4)
-                            st.download_button(
-                                label=f"Download {task_name} Output as JSON",
-                                data=json_data,
-                                file_name=f"{task_name.replace(' ', '_')}_output.json",
-                                mime="application/json"
-                            )
-                elif hasattr(results, 'results'):
-                    # Assuming 'results' is a list of task outputs
-                    st.success("Tasks completed successfully!")
-                    for task_result in results.results:
-                        task_name = task_result.task_name
-                        output = task_result.output
-                        st.write(f"**{task_name} Output:**")
-                        st.write(output)
+                        # Provide download button for Text file
+                        st.download_button(
+                            label=f"Download {task_name} as Text",
+                            data=output,
+                            file_name=tasks[task_name].output_file,
+                            mime="text/plain"
+                        )
+                    else:
+                        # For other types, serialize to JSON
+                        json_output = json.dumps(output, indent=4)
+                        st.json(output)
 
-                        # Provide download link based on output type
-                        if isinstance(output, str):
-                            st.download_button(
-                                label=f"Download {task_name} Output as Text",
-                                data=output,
-                                file_name=f"{task_name.replace(' ', '_')}_output.txt",
-                                mime="text/plain"
-                            )
-                        elif isinstance(output, pd.DataFrame):
-                            excel_buffer = BytesIO()
-                            output.to_excel(excel_buffer, index=False)
-                            excel_buffer.seek(0)
-                            st.download_button(
-                                label=f"Download {task_name} Output as Excel",
-                                data=excel_buffer,
-                                file_name=f"{task_name.replace(' ', '_')}_output.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
-                        else:
-                            # For other types, provide JSON download
-                            json_data = json.dumps(output, indent=4)
-                            st.download_button(
-                                label=f"Download {task_name} Output as JSON",
-                                data=json_data,
-                                file_name=f"{task_name.replace(' ', '_')}_output.json",
-                                mime="application/json"
-                            )
-                else:
-                    st.error("Unable to parse the results from CrewOutput.")
+                        # Provide download button for JSON file
+                        st.download_button(
+                            label=f"Download {task_name} as JSON",
+                            data=json_output,
+                            file_name=tasks[task_name].output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
+                            mime="application/json"
+                        )
             except Exception as e:
                 st.error(f"An error occurred while executing tasks: {e}")
         else:
             st.warning("Please select at least one task to run.")
 
-    # 13. Sidebar: Ask Additional Questions
+    # 14. Sidebar: Ask Additional Questions
     st.sidebar.header("Ask Additional Questions")
     ask_question = st.sidebar.checkbox("Do you want to ask a specific question to an agent?")
 
@@ -256,10 +233,10 @@ if openai_key and serper_key:
                     response = agents[selected_agent_for_question].llm([message]).content
 
                     # Display the response in the main area
-                    st.write("**Agent's Response:**")
+                    st.write("### Agent's Response:")
                     st.write(response)
 
-                    # Provide download link for the response
+                    # Provide download button for the response
                     st.download_button(
                         label=f"Download {selected_agent_for_question} Response as Text",
                         data=response,
@@ -268,9 +245,9 @@ if openai_key and serper_key:
                     )
                 except Exception as e:
                     st.error(f"An error occurred while processing your question: {e}")
-
     else:
         st.info("You can run predefined tasks or choose to ask specific questions to agents.")
 
 else:
     st.warning("Please enter both OpenAI and Serper API keys to proceed.")
+
