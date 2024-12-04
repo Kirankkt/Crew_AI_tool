@@ -1,3 +1,8 @@
+import pysqlite3
+import sys
+sys.modules['sqlite3'] = pysqlite3
+
+
 import streamlit as st
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
