@@ -5,10 +5,10 @@ from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
-import pandas as pd
-from io import BytesIO
 import os
 import warnings
+import pandas as pd
+from io import BytesIO
 
 # Suppress SyntaxWarnings from pysbd
 warnings.filterwarnings("ignore", category=SyntaxWarning)
@@ -23,24 +23,6 @@ st.sidebar.title("Configuration")
 # API Key Inputs
 openai_key = st.sidebar.text_input("OpenAI API Key:", type="password")
 serper_key = st.sidebar.text_input("Serper API Key:", type="password")
-
-# Function to save results to Excel
-def save_results_to_excel(results_dict):
-    excel_buffer = BytesIO()
-    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-        for task_name, output in results_dict.items():
-            # Create a DataFrame from the output if it's a list or dictionary
-            if isinstance(output, list):
-                df = pd.DataFrame(output)
-            elif isinstance(output, dict):
-                df = pd.DataFrame([output])
-            else:
-                # If the output is a string, save it in a single-column DataFrame
-                df = pd.DataFrame({"Result": [output]})
-            # Save to a sheet named after the task
-            df.to_excel(writer, sheet_name=task_name[:31], index=False)  # Sheet names max 31 chars
-    excel_buffer.seek(0)
-    return excel_buffer
 
 if openai_key and serper_key:
     os.environ["OPENAI_API_KEY"] = openai_key
@@ -167,20 +149,77 @@ if openai_key and serper_key:
                 if hasattr(results, 'to_dict'):
                     results_dict = results.to_dict()
                     st.success("Tasks completed successfully!")
-                    
-                    # Display results in the app
                     for task_name, output in results_dict.items():
                         st.write(f"**{task_name} Output:**")
                         st.write(output)
-                    
-                    # Save results to Excel and provide download option
-                    excel_file = save_results_to_excel(results_dict)
-                    st.download_button(
-                        label="Download Results as Excel",
-                        data=excel_file,
-                        file_name="task_results.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
+
+                        # Provide download link for text outputs
+                        if isinstance(output, str):
+                            st.download_button(
+                                label=f"Download {task_name} Output as Text",
+                                data=output,
+                                file_name=f"{task_name.replace(' ', '_')}_output.txt",
+                                mime="text/plain"
+                            )
+                        # If output is a pandas DataFrame, provide Excel download
+                        elif isinstance(output, pd.DataFrame):
+                            excel_buffer = BytesIO()
+                            output.to_excel(excel_buffer, index=False)
+                            excel_buffer.seek(0)
+                            st.download_button(
+                                label=f"Download {task_name} Output as Excel",
+                                data=excel_buffer,
+                                file_name=f"{task_name.replace(' ', '_')}_output.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        else:
+                            # For other types, provide JSON download
+                            import json
+                            json_data = json.dumps(output, indent=4)
+                            st.download_button(
+                                label=f"Download {task_name} Output as JSON",
+                                data=json_data,
+                                file_name=f"{task_name.replace(' ', '_')}_output.json",
+                                mime="application/json"
+                            )
+                elif hasattr(results, 'results'):
+                    # Assuming 'results' is a list of task outputs
+                    st.success("Tasks completed successfully!")
+                    for task_result in results.results:
+                        task_name = task_result.task_name
+                        output = task_result.output
+                        st.write(f"**{task_name} Output:**")
+                        st.write(output)
+
+                        # Provide download link for text outputs
+                        if isinstance(output, str):
+                            st.download_button(
+                                label=f"Download {task_name} Output as Text",
+                                data=output,
+                                file_name=f"{task_name.replace(' ', '_')}_output.txt",
+                                mime="text/plain"
+                            )
+                        # If output is a pandas DataFrame, provide Excel download
+                        elif isinstance(output, pd.DataFrame):
+                            excel_buffer = BytesIO()
+                            output.to_excel(excel_buffer, index=False)
+                            excel_buffer.seek(0)
+                            st.download_button(
+                                label=f"Download {task_name} Output as Excel",
+                                data=excel_buffer,
+                                file_name=f"{task_name.replace(' ', '_')}_output.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        else:
+                            # For other types, provide JSON download
+                            import json
+                            json_data = json.dumps(output, indent=4)
+                            st.download_button(
+                                label=f"Download {task_name} Output as JSON",
+                                data=json_data,
+                                file_name=f"{task_name.replace(' ', '_')}_output.json",
+                                mime="application/json"
+                            )
                 else:
                     st.error("Unable to parse the results from CrewOutput.")
             except Exception as e:
@@ -206,12 +245,20 @@ if openai_key and serper_key:
                 try:
                     # Construct the message
                     message = HumanMessage(content=additional_question)
-                    
+
                     # Get response from the agent's LLM
                     response = agents[selected_agent_for_question].llm([message]).content
 
                     st.write("**Agent's Response:**")
                     st.write(response)
+
+                    # Provide download link for the response
+                    st.download_button(
+                        label=f"Download {selected_agent_for_question} Response as Text",
+                        data=response,
+                        file_name=f"{selected_agent_for_question.replace(' ', '_')}_response.txt",
+                        mime="text/plain"
+                    )
                 except Exception as e:
                     st.error(f"An error occurred while processing your question: {e}")
 
