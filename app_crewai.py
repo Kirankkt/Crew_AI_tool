@@ -142,10 +142,24 @@ if openai_key and serper_key:
             st.write("Executing selected tasks...")
             try:
                 results = crew.kickoff()
-                st.success("Tasks completed successfully!")
-                for task_name, output in results.items():
-                    st.write(f"**{task_name} Output:**")
-                    st.write(output)
+                
+                # Handle CrewOutput properly
+                if hasattr(results, 'to_dict'):
+                    results_dict = results.to_dict()
+                    st.success("Tasks completed successfully!")
+                    for task_name, output in results_dict.items():
+                        st.write(f"**{task_name} Output:**")
+                        st.write(output)
+                elif hasattr(results, 'results'):
+                    # Assuming 'results' is a list of task outputs
+                    st.success("Tasks completed successfully!")
+                    for task_result in results.results:
+                        task_name = task_result.task_name
+                        output = task_result.output
+                        st.write(f"**{task_name} Output:**")
+                        st.write(output)
+                else:
+                    st.error("Unable to parse the results from CrewOutput.")
             except Exception as e:
                 st.error(f"An error occurred while executing tasks: {e}")
         else:
@@ -154,7 +168,7 @@ if openai_key and serper_key:
     # Sidebar: Ask Additional Questions
     st.sidebar.header("Ask Additional Questions")
     ask_question = st.sidebar.checkbox("Do you want to ask a specific question to an agent?")
-    
+
     if ask_question:
         selected_agent_for_question = st.sidebar.selectbox(
             "Select an agent to ask a question:",
