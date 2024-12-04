@@ -158,53 +158,69 @@ if openai_key and serper_key:
                 st.success("Tasks completed successfully!")
 
                 # 13. Handle CrewOutput properly
-                # Access individual task outputs
-                for task_output in crew_output.tasks_output:
-                    task_name = task_output.task_name
-                    output = task_output.output
+                if hasattr(crew_output, 'tasks_output'):
+                    for task_output in crew_output.tasks_output:
+                        # Debugging: Inspect TaskOutput attributes
+                        st.write("### Task Output Debugging")
+                        st.write(task_output)  # Display the TaskOutput object
+                        st.write(dir(task_output))  # List all attributes
 
-                    st.write(f"### {task_name} Output:")
+                        # Adjust attribute access based on actual TaskOutput structure
+                        # For example, if task_output.task.name exists
+                        try:
+                            task_name = task_output.task.name  # Adjust if necessary
+                        except AttributeError:
+                            try:
+                                task_name = task_output.task_title  # Alternative attribute
+                            except AttributeError:
+                                task_name = "Unknown Task"
 
-                    # Check if output is a Pandas DataFrame
-                    if isinstance(output, pd.DataFrame):
-                        st.dataframe(output)
+                        output = task_output.output
 
-                        # Convert DataFrame to Excel in memory
-                        excel_buffer = BytesIO()
-                        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                            output.to_excel(writer, index=False, sheet_name='Sheet1')
-                            writer.save()
-                        excel_buffer.seek(0)
+                        st.write(f"### {task_name} Output:")
 
-                        # Provide download button for Excel file
-                        st.download_button(
-                            label=f"Download {task_name} as Excel",
-                            data=excel_buffer,
-                            file_name=tasks[task_name].output_file,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                    elif isinstance(output, str):
-                        st.write(output)
+                        # Check if output is a Pandas DataFrame
+                        if isinstance(output, pd.DataFrame):
+                            st.dataframe(output)
 
-                        # Provide download button for Text file
-                        st.download_button(
-                            label=f"Download {task_name} as Text",
-                            data=output,
-                            file_name=tasks[task_name].output_file,
-                            mime="text/plain"
-                        )
-                    else:
-                        # For other types, serialize to JSON
-                        json_output = json.dumps(output, indent=4)
-                        st.json(output)
+                            # Convert DataFrame to Excel in memory
+                            excel_buffer = BytesIO()
+                            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                                output.to_excel(writer, index=False, sheet_name='Sheet1')
+                                writer.save()
+                            excel_buffer.seek(0)
 
-                        # Provide download button for JSON file
-                        st.download_button(
-                            label=f"Download {task_name} as JSON",
-                            data=json_output,
-                            file_name=tasks[task_name].output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
-                            mime="application/json"
-                        )
+                            # Provide download button for Excel file
+                            st.download_button(
+                                label=f"Download {task_name} as Excel",
+                                data=excel_buffer,
+                                file_name=tasks.get(task_name, Task()).output_file,
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        elif isinstance(output, str):
+                            st.write(output)
+
+                            # Provide download button for Text file
+                            st.download_button(
+                                label=f"Download {task_name} as Text",
+                                data=output,
+                                file_name=tasks.get(task_name, Task()).output_file,
+                                mime="text/plain"
+                            )
+                        else:
+                            # For other types, serialize to JSON
+                            json_output = json.dumps(output, indent=4)
+                            st.json(output)
+
+                            # Provide download button for JSON file
+                            st.download_button(
+                                label=f"Download {task_name} as JSON",
+                                data=json_output,
+                                file_name=tasks.get(task_name, Task()).output_file.replace('.txt', '.json').replace('.xlsx', '.json'),
+                                mime="application/json"
+                            )
+                else:
+                    st.error("No task outputs found in CrewOutput.")
             except Exception as e:
                 st.error(f"An error occurred while executing tasks: {e}")
         else:
@@ -250,4 +266,3 @@ if openai_key and serper_key:
 
 else:
     st.warning("Please enter both OpenAI and Serper API keys to proceed.")
-
