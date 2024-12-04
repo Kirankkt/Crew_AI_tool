@@ -1,5 +1,6 @@
-streamlit
-crewai
-crewai-tools
-langchain-openai
-sqlite3 >= 3.35.0
+streamlit==1.40.2
+crewai==0.83.0
+crewai-tools==0.14.0
+langchain-openai==0.2.11
+chromadb[duckdb]==0.3.25
+
