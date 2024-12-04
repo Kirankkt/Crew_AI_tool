@@ -26,10 +26,11 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 import sqlite3
 st.write(f"**SQLite version:** {sqlite3.sqlite_version}")
 
-# 4. API Key Inputs
+# 4. Streamlit UI Setup
 st.title("CrewAI Task Manager")
 st.sidebar.title("Configuration")
 
+# 5. API Key Inputs
 openai_key = st.sidebar.text_input("OpenAI API Key:", type="password")
 serper_key = st.sidebar.text_input("Serper API Key:", type="password")
 
@@ -37,13 +38,13 @@ if openai_key and serper_key:
     os.environ["OPENAI_API_KEY"] = openai_key
     os.environ["SERPER_API_KEY"] = serper_key
 
-    # Model Selection
+    # 6. Model Selection
     model_choice = st.sidebar.radio(
         "Choose a model:",
         ("Cheaper option (GPT-3.5)", "Costlier option (GPT-4)")
     )
 
-    # LLM Setup
+    # 7. LLM Setup
     model = "gpt-3.5-turbo" if model_choice == "Cheaper option (GPT-3.5)" else "gpt-4"
     llm = ChatOpenAI(
         model_name=model,
@@ -51,10 +52,10 @@ if openai_key and serper_key:
         max_tokens=300
     )
 
-    # SerperDevTool Setup
+    # 8. SerperDevTool Setup
     search = SerperDevTool(api_key=serper_key)
 
-    # Define Agents
+    # 9. Define Agents
     agents = {
         "Real Estate Research Agent": Agent(
             llm=llm,
@@ -92,7 +93,7 @@ if openai_key and serper_key:
         ),
     }
 
-    # Define Tasks
+    # 10. Define Tasks
     tasks = {
         "Advanced Market Research for Premium Locations": Task(
             description=(
@@ -134,7 +135,7 @@ if openai_key and serper_key:
         ),
     }
 
-    # Sidebar: Run Selected Tasks
+    # 11. Sidebar: Run Selected Tasks
     st.sidebar.header("Run Selected Tasks")
     selected_tasks = st.sidebar.multiselect(
         "Select tasks to run:",
@@ -162,7 +163,7 @@ if openai_key and serper_key:
                         st.write(f"**{task_name} Output:**")
                         st.write(output)
 
-                        # Provide download link for text outputs
+                        # Provide download link based on output type
                         if isinstance(output, str):
                             st.download_button(
                                 label=f"Download {task_name} Output as Text",
@@ -170,7 +171,6 @@ if openai_key and serper_key:
                                 file_name=f"{task_name.replace(' ', '_')}_output.txt",
                                 mime="text/plain"
                             )
-                        # If output is a pandas DataFrame, provide Excel download
                         elif isinstance(output, pd.DataFrame):
                             excel_buffer = BytesIO()
                             output.to_excel(excel_buffer, index=False)
@@ -199,7 +199,7 @@ if openai_key and serper_key:
                         st.write(f"**{task_name} Output:**")
                         st.write(output)
 
-                        # Provide download link for text outputs
+                        # Provide download link based on output type
                         if isinstance(output, str):
                             st.download_button(
                                 label=f"Download {task_name} Output as Text",
@@ -207,7 +207,6 @@ if openai_key and serper_key:
                                 file_name=f"{task_name.replace(' ', '_')}_output.txt",
                                 mime="text/plain"
                             )
-                        # If output is a pandas DataFrame, provide Excel download
                         elif isinstance(output, pd.DataFrame):
                             excel_buffer = BytesIO()
                             output.to_excel(excel_buffer, index=False)
@@ -234,7 +233,7 @@ if openai_key and serper_key:
         else:
             st.warning("Please select at least one task to run.")
 
-    # Sidebar: Ask Additional Questions
+    # 12. Sidebar: Ask Additional Questions
     st.sidebar.header("Ask Additional Questions")
     ask_question = st.sidebar.checkbox("Do you want to ask a specific question to an agent?")
 
@@ -256,6 +255,7 @@ if openai_key and serper_key:
                     # Get response from the agent's LLM
                     response = agents[selected_agent_for_question].llm([message]).content
 
+                    # Display the response in the main area
                     st.write("**Agent's Response:**")
                     st.write(response)
 
