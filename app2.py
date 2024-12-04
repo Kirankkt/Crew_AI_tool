@@ -1,26 +1,34 @@
+# app_crewai.py
+
+# 1. Override sqlite3 before importing any other modules
 import pysqlite3
 import sys
+
+# Override the default sqlite3 with pysqlite3
+sys.modules['sqlite3'] = pysqlite3
+
+# 2. Now, import the rest of your modules
 import streamlit as st
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
-import os
-import warnings
 import pandas as pd
 from io import BytesIO
+import json
+import warnings
 
 # Suppress SyntaxWarnings from pysbd
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-# Override the default sqlite3 with pysqlite3
-sys.modules['sqlite3'] = pysqlite3
+# 3. Verify sqlite3 version
+import sqlite3
+st.write(f"**SQLite version:** {sqlite3.sqlite_version}")
 
-# Streamlit UI Setup
+# 4. API Key Inputs
 st.title("CrewAI Task Manager")
 st.sidebar.title("Configuration")
 
-# API Key Inputs
 openai_key = st.sidebar.text_input("OpenAI API Key:", type="password")
 serper_key = st.sidebar.text_input("Serper API Key:", type="password")
 
@@ -174,7 +182,6 @@ if openai_key and serper_key:
                             )
                         else:
                             # For other types, provide JSON download
-                            import json
                             json_data = json.dumps(output, indent=4)
                             st.download_button(
                                 label=f"Download {task_name} Output as JSON",
@@ -212,7 +219,6 @@ if openai_key and serper_key:
                             )
                         else:
                             # For other types, provide JSON download
-                            import json
                             json_data = json.dumps(output, indent=4)
                             st.download_button(
                                 label=f"Download {task_name} Output as JSON",
