@@ -1,4 +1,4 @@
-langchain_openai
+langchain
 streamlit
 crewai
 crewai_tools
