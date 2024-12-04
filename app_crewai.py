@@ -5,7 +5,8 @@ sys.modules['sqlite3'] = pysqlite3
 import streamlit as st
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
-from langchain_openai import ChatOpenAI as OpenAI_LLM
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import HumanMessage
 import os
 
 # Streamlit UI Setup
@@ -26,10 +27,17 @@ if openai_key and serper_key:
         ("Cheaper option (GPT-3.5)", "Costlier option (GPT-4)")
     )
 
-    # LLM Setup
+    # LLM Setup for Agents
     model = "gpt-3.5-turbo" if model_choice == "Cheaper option (GPT-3.5)" else "gpt-4"
-    llm = OpenAI_LLM(
-        model=model,
+    agent_llm = ChatOpenAI(
+        model_name=model,
+        temperature=0.2,
+        max_tokens=300
+    )
+
+    # LLM Setup for Additional Questions
+    question_llm = ChatOpenAI(
+        model_name=model,
         temperature=0.2,
         max_tokens=300
     )
@@ -40,7 +48,7 @@ if openai_key and serper_key:
     # Define Agents
     agents = {
         "Real Estate Research Agent": Agent(
-            llm=llm,
+            llm=agent_llm,
             role="Senior Real Estate Researcher",
             goal="Find promising properties for sale (not rent) near water bodies in Trivandrum district.",
             backstory="Veteran Real Estate Agent with 50 years of experience.",
@@ -49,7 +57,7 @@ if openai_key and serper_key:
             verbose=1,
         ),
         "Furniture Storytelling Agent": Agent(
-            llm=llm,
+            llm=agent_llm,
             role="Furniture Storyteller",
             goal="Create engaging stories for handcrafted Kerala furniture, emphasizing cultural heritage.",
             backstory="Specialist in Kerala's history and storytelling.",
@@ -57,11 +65,19 @@ if openai_key and serper_key:
             verbose=1,
         ),
         "Website Design Insight Agent": Agent(
-            llm=llm,
+            llm=agent_llm,
             role="Website Design Consultant",
             goal="Analyze top real estate and furniture websites for NRI appeal.",
             backstory="Digital marketing expert specializing in user experience for global clients.",
             tools=[search],
+            allow_delegation=False,
+            verbose=1,
+        ),
+        "Financial Reporting Agent": Agent(
+            llm=agent_llm,
+            role="Financial Manager",
+            goal="Calculate monthly expenses, profitability, and cost analysis for the business.",
+            backstory="An accounting genius with a knack for analyzing financial data.",
             allow_delegation=False,
             verbose=1,
         ),
@@ -70,27 +86,43 @@ if openai_key and serper_key:
     # Define Tasks
     tasks = {
         "Advanced Market Research for Premium Locations": Task(
-            description="Research properties near water bodies in Trivandrum district.",
-            expected_output="List of properties with links, descriptions, and prices.",
-            output_file="real_estate_report.txt",
+            description="Conduct advanced research for properties near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district.",
+            expected_output="List all the best properties (with accurate links for each of them) that are near sea, beach, lake, or river, with water-view or sea-view in or around Trivandrum district based on your search.",
+            output_file="advanced_market_research_report.txt",
             agent=agents["Real Estate Research Agent"],
         ),
         "Furniture Storytelling": Task(
-            description="Create cultural heritage stories for 5 Kerala furniture pieces.",
-            expected_output="Stories connecting the furniture to Kerala's cultural history.",
+            description=(
+                "Write 5 unique stories for handcrafted Kerala furniture pieces that emphasize cultural heritage and craftsmanship. "
+                "Each story should highlight the furniture's design, craftsmanship, and cultural background, appealing to NRIs."
+            ),
+            expected_output=(
+                "Each story should be approximately 300 words, maintaining a consistent brand voice and connecting the furniture piece to Kerala’s rich cultural heritage."
+            ),
             output_file="furniture_stories.txt",
             agent=agents["Furniture Storytelling Agent"],
         ),
         "Website Design Insights": Task(
-            description="Analyze design elements from 30 websites appealing to NRIs.",
-            expected_output="Brief on design features to incorporate in our website.",
+            description=(
+                "Analyze 30 inspiring real estate and furniture websites to identify design elements that appeal to NRIs. "
+                "Focus on layout, color schemes, user experience, and interactive features."
+            ),
+            expected_output=(
+                "A design brief outlining the most impactful features, layouts, and user experience elements to incorporate into our luxury real estate and furniture website."
+            ),
             output_file="website_design_insights.txt",
             agent=agents["Website Design Insight Agent"],
         ),
+        "Financial Report Calculation": Task(
+            description="Compile all expenses and calculate profitability for monthly financial reporting.",
+            expected_output="An Excel report detailing costs and profitability.",
+            output_file="financial_report.xlsx",
+            agent=agents["Financial Reporting Agent"],
+        ),
     }
 
-    # Agent Selection
-    st.sidebar.header("Select Agents")
+    # Agent Selection for Tasks
+    st.sidebar.header("Select Agents for Tasks")
     selected_agents = st.sidebar.multiselect(
         "Which agents do you want to run?",
         options=list(agents.keys()),
@@ -108,11 +140,14 @@ if openai_key and serper_key:
                 verbose=1
             )
             st.write("Executing tasks...")
-            results = crew.kickoff()
-            st.success("Tasks completed!")
-            for name, output in results.items():
-                st.write(f"**{name} Output:**")
-                st.write(output)
+            try:
+                results = crew.kickoff()
+                st.success("Tasks completed!")
+                for name, output in results.items():
+                    st.write(f"**{name} Output:**")
+                    st.write(output)
+            except Exception as e:
+                st.error(f"An error occurred while executing tasks: {e}")
         else:
             st.warning("Please select at least one agent to run.")
 
@@ -120,19 +155,20 @@ if openai_key and serper_key:
     st.sidebar.header("Ask Additional Questions")
     additional_question = st.sidebar.text_input("Type your question here:")
 
-    if additional_question and st.button("Ask Question"):
+    if additional_question and st.sidebar.button("Ask Question"):
         selected_agent = st.sidebar.selectbox(
             "Which agent should answer your question?",
             options=list(agents.keys())
         )
-        response = agents[selected_agent].llm(additional_question)
-        
-        # If response is a LangChain object, extract the text
-        if hasattr(response, 'generations'):
-            response = response.generations[0][0].text
-        
-        st.write("**Agent's Response:**")
-        st.write(response)
+        try:
+            # Construct the message
+            message = HumanMessage(content=additional_question)
+            # Get response from the question LLM
+            response = question_llm([message]).content
+            st.write("**Agent's Response:**")
+            st.write(response)
+        except Exception as e:
+            st.error(f"An error occurred while processing your question: {e}")
 
 else:
     st.warning("Please enter both OpenAI and Serper API keys to proceed.")
