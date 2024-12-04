@@ -1,6 +1,5 @@
-pysqlite3-binary
-chromadb>=0.5.18
-streamlit==1.40.2
-crewai==0.83.0
-crewai-tools==0.14.0
-langchain-openai==0.2.11
+langchain_openai
+streamlit
+crewai
+crewai_tools
+
