@@ -1,14 +1,33 @@
 import os
 import sys
+import streamlit as st
 
-# 1. Set Chroma to use DuckDB to avoid sqlite3 dependency
+# 1. Suppress SyntaxWarnings from pysbd (optional)
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
+# 2. Set environment variables from Streamlit secrets
+if "OPENAI_API_KEY" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+else:
+    st.error("OpenAI API key not found in secrets.")
+
+if "SERPER_DEV_API_KEY" in st.secrets:
+    os.environ["SERPER_DEV_API_KEY"] = st.secrets["SERPER_DEV_API_KEY"]
+else:
+    st.error("Serper Dev API key not found in secrets.")
+
+# 3. Set Chroma to use DuckDB to avoid sqlite3 dependency
 os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
 
-# 2. Import pysqlite3 and override the default sqlite3
-import pysqlite3
-sys.modules["sqlite3"] = pysqlite3
+# 4. Import pysqlite3 and override the default sqlite3
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    st.warning("pysqlite3 is not installed. Proceeding without overriding sqlite3.")
 
-# 3. Standard imports
+# 5. Import other libraries after setting up environment and overriding modules
 import re
 import logging
 import pandas as pd
@@ -18,10 +37,9 @@ import time
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI as OpenAI_LLM
-import streamlit as st
 from io import BytesIO
 
-# Configure logging
+# 6. Configure logging
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(levelname)s: %(message)s',
@@ -189,7 +207,7 @@ def create_real_estate_crew(search_params):
     crew = Crew(
         agents=[real_estate_agent],
         tasks=[research_task],
-        verbose=1
+        verbose=2
     )
 
     return crew
@@ -292,6 +310,10 @@ def main():
     
     # 2. Display the app title
     st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
+
+    # Temporary debug statements (Remove after verification)
+    st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
+    st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_DEV_API_KEY') else 'No'}")
 
     # 3. Sidebar configuration
     st.sidebar.header("🔍 Property Search Parameters")
