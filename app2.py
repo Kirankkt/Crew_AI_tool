@@ -1,14 +1,29 @@
 import os
 import sys
+import streamlit as st
 
-# 1. Set Chroma to use DuckDB to avoid sqlite3 dependency
+# 1. Set environment variables from Streamlit secrets
+if "openai_api_key" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
+else:
+    st.error("OpenAI API key not found in secrets.")
+
+if "serper_dev_api_key" in st.secrets:
+    os.environ["SERPER_DEV_API_KEY"] = st.secrets["serper_dev_api_key"]
+else:
+    st.error("Serper Dev API key not found in secrets.")
+
+# 2. Set Chroma to use DuckDB to avoid sqlite3 dependency
 os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
 
-# 2. Import pysqlite3 and override the default sqlite3
-import pysqlite3
-sys.modules["sqlite3"] = pysqlite3
+# 3. Import pysqlite3 and override the default sqlite3
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    st.warning("pysqlite3 is not installed. Proceeding without overriding sqlite3.")
 
-# 3. Proceed with other imports after overriding sqlite3
+# 4. Import other libraries after setting up environment and overriding modules
 import re
 import logging
 import pandas as pd
@@ -18,8 +33,11 @@ import time
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI as OpenAI_LLM
-import streamlit as st
 from io import BytesIO
+
+# 5. Suppress SyntaxWarnings from pysbd (optional)
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Configure logging
 logging.basicConfig(
@@ -275,10 +293,6 @@ def main():
     st.set_page_config(page_title="Trivandrum Real Estate Assistant", layout="wide")
     st.title("🏠 Trivandrum Real Estate Assistant")
 
-    st.sidebar.header("🔑 API Keys")
-    openai_api_key = st.sidebar.text_input("Enter your OpenAI API key:", type="password")
-    serper_api_key = st.sidebar.text_input("Enter your Serper Dev API key:", type="password")
-
     st.sidebar.header("🔍 Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox("Property Type", ["Waterfront", "Apartment", "Villa", "Commercial"])
@@ -295,6 +309,9 @@ def main():
         st.session_state.df = None
 
     if st.sidebar.button("Search Properties"):
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        serper_api_key = os.getenv("SERPER_DEV_API_KEY")
+        
         if openai_api_key and serper_api_key:
             with st.spinner("Searching for properties..."):
                 df, excel_data = run_property_search(openai_api_key, serper_api_key, search_params)
@@ -311,11 +328,14 @@ def main():
                 else:
                     st.warning("⚠️ No properties found. Please try different search parameters.")
         else:
-            st.error("❗ Please enter both OpenAI and Serper Dev API keys.")
+            st.error("❗ API keys are missing. Please set them in Streamlit secrets.")
 
     st.header("💬 Ask a Question")
     user_query = st.text_input("Your Question:")
     if st.button("Submit Question"):
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        serper_api_key = os.getenv("SERPER_DEV_API_KEY")
+        
         if openai_api_key:
             # Load existing property data from session state
             if st.session_state.df is not None:
@@ -324,7 +344,7 @@ def main():
             else:
                 st.error("❗ No property data available. Please perform a search first.")
         else:
-            st.error("❗ Please enter your OpenAI API key.")
+            st.error("❗ API keys are missing. Please set them in Streamlit secrets.")
 
 if __name__ == "__main__":
     main()
