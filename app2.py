@@ -9,6 +9,7 @@ from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI as OpenAI_LLM
 import streamlit as st
+import pysqlite3
 from io import BytesIO
 
 # Configure logging
