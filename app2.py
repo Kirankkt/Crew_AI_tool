@@ -12,6 +12,8 @@ import streamlit as st
 import pysqlite3
 from io import BytesIO
 
+# Override the default sqlite3 with pysqlite3
+sys.modules['sqlite3'] = pysqlite3
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, 
