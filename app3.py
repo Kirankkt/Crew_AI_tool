@@ -207,7 +207,7 @@ def create_real_estate_crew(search_params):
     crew = Crew(
         agents=[real_estate_agent],
         tasks=[research_task],
-        verbose=2
+        verbose=1
     )
 
     return crew
