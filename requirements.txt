@@ -4,5 +4,8 @@ crewai
 crewai_tools
 pysqlite3-binary
 langchain-community
+requests
+openpyxl
+
 
 
