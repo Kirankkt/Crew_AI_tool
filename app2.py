@@ -1,29 +1,14 @@
 import os
 import sys
-import streamlit as st
 
-# 1. Set environment variables from Streamlit secrets
-if "openai_api_key" in st.secrets:
-    os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
-else:
-    st.error("OpenAI API key not found in secrets.")
-
-if "serper_dev_api_key" in st.secrets:
-    os.environ["SERPER_DEV_API_KEY"] = st.secrets["serper_dev_api_key"]
-else:
-    st.error("Serper Dev API key not found in secrets.")
-
-# 2. Set Chroma to use DuckDB to avoid sqlite3 dependency
+# 1. Set Chroma to use DuckDB to avoid sqlite3 dependency
 os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
 
-# 3. Import pysqlite3 and override the default sqlite3
-try:
-    import pysqlite3
-    sys.modules["sqlite3"] = pysqlite3
-except ImportError:
-    st.warning("pysqlite3 is not installed. Proceeding without overriding sqlite3.")
+# 2. Import pysqlite3 and override the default sqlite3
+import pysqlite3
+sys.modules["sqlite3"] = pysqlite3
 
-# 4. Import other libraries after setting up environment and overriding modules
+# 3. Proceed with other imports after overriding sqlite3
 import re
 import logging
 import pandas as pd
@@ -33,11 +18,8 @@ import time
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI as OpenAI_LLM
+import streamlit as st
 from io import BytesIO
-
-# 5. Suppress SyntaxWarnings from pysbd (optional)
-import warnings
-warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Configure logging
 logging.basicConfig(
@@ -55,7 +37,6 @@ def is_valid_url(url, retries=3, delay=2):
         try:
             response = requests.head(url, allow_redirects=True, timeout=5)
             if response.status_code == 200:
-                # Optionally, check for specific content in the page to ensure it's a property listing
                 return True
             else:
                 logging.warning(f"URL check failed ({response.status_code}): {url}")
@@ -69,7 +50,6 @@ def validate_and_normalize_link(link):
     Validate and normalize property links.
     Ensures the link is properly formatted and points to a valid page.
     """
-    # Define URL patterns specific to real estate websites
     url_patterns = [
         r'^https?://www\.magicbricks\.com/property-details/\S+',
         r'^https?://www\.99acres\.com/property/\S+',
@@ -157,10 +137,17 @@ def save_to_excel(properties, filename='trivandrum_real_estate_properties.xlsx')
         logging.error(f"Error creating Excel file: {e}")
         return None, None
 
-def create_real_estate_crew(openai_api_key, serper_api_key, search_params):
+def create_real_estate_crew(search_params):
     """
     Create and configure the CrewAI agents and tasks with dynamic search parameters.
     """
+    # Retrieve API keys from environment variables
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
+    serper_api_key = os.environ.get('SERPER_API_KEY')
+
+    if not openai_api_key or not serper_api_key:
+        raise ValueError("Missing API keys. Please set OPENAI_API_KEY and SERPER_API_KEY in environment variables.")
+
     # Extract search parameters
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'waterfront')
@@ -226,7 +213,7 @@ def create_real_estate_crew(openai_api_key, serper_api_key, search_params):
 
     return crew
 
-def run_property_search(openai_api_key, serper_api_key, search_params):
+def run_property_search(search_params):
     """
     Main function to run the property search.
     """
@@ -235,7 +222,7 @@ def run_property_search(openai_api_key, serper_api_key, search_params):
         logging.info("Starting Trivandrum waterfront property search")
         
         # Create and run the crew
-        crew = create_real_estate_crew(openai_api_key, serper_api_key, search_params)
+        crew = create_real_estate_crew(search_params)
         results = crew.kickoff()
         
         # Extract properties from CrewAI output
@@ -255,10 +242,16 @@ def run_property_search(openai_api_key, serper_api_key, search_params):
         logging.error(f"An error occurred: {e}", exc_info=True)
         return None, None
 
-def handle_user_query(query, openai_api_key, df):
+def handle_user_query(query, df):
     """
     Handle dynamic user queries based on the current property data.
     """
+    # Retrieve OpenAI API key from environment variables
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
+
+    if not openai_api_key:
+        return "OpenAI API key is missing. Please set it in environment variables."
+
     if df is None or df.empty:
         return "No property data available. Please perform a search first."
 
@@ -293,6 +286,15 @@ def main():
     st.set_page_config(page_title="Trivandrum Real Estate Assistant", layout="wide")
     st.title("🏠 Trivandrum Real Estate Assistant")
 
+    # Check for API keys in environment variables
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
+    serper_api_key = os.environ.get('SERPER_API_KEY')
+
+    # Warn if API keys are missing
+    if not openai_api_key or not serper_api_key:
+        st.error("❗ API keys are missing. Please set OPENAI_API_KEY and SERPER_API_KEY in Streamlit Cloud secrets.")
+        st.stop()
+
     st.sidebar.header("🔍 Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox("Property Type", ["Waterfront", "Apartment", "Villa", "Commercial"])
@@ -309,42 +311,30 @@ def main():
         st.session_state.df = None
 
     if st.sidebar.button("Search Properties"):
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        serper_api_key = os.getenv("SERPER_DEV_API_KEY")
-        
-        if openai_api_key and serper_api_key:
-            with st.spinner("Searching for properties..."):
-                df, excel_data = run_property_search(openai_api_key, serper_api_key, search_params)
-                if df is not None:
-                    st.session_state.df = df
-                    st.success("✅ Properties Found!")
-                    st.dataframe(df)
-                    st.download_button(
-                        label="📥 Download Excel",
-                        data=excel_data,
-                        file_name='trivandrum_real_estate_properties.xlsx',
-                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    )
-                else:
-                    st.warning("⚠️ No properties found. Please try different search parameters.")
-        else:
-            st.error("❗ API keys are missing. Please set them in Streamlit secrets.")
+        with st.spinner("Searching for properties..."):
+            df, excel_data = run_property_search(search_params)
+            if df is not None:
+                st.session_state.df = df
+                st.success("✅ Properties Found!")
+                st.dataframe(df)
+                st.download_button(
+                    label="📥 Download Excel",
+                    data=excel_data,
+                    file_name='trivandrum_real_estate_properties.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+            else:
+                st.warning("⚠️ No properties found. Please try different search parameters.")
 
     st.header("💬 Ask a Question")
     user_query = st.text_input("Your Question:")
     if st.button("Submit Question"):
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        serper_api_key = os.getenv("SERPER_DEV_API_KEY")
-        
-        if openai_api_key:
-            # Load existing property data from session state
-            if st.session_state.df is not None:
-                answer = handle_user_query(user_query, openai_api_key, st.session_state.df)
-                st.write(answer)
-            else:
-                st.error("❗ No property data available. Please perform a search first.")
+        # Load existing property data from session state
+        if st.session_state.df is not None:
+            answer = handle_user_query(user_query, st.session_state.df)
+            st.write(answer)
         else:
-            st.error("❗ API keys are missing. Please set them in Streamlit secrets.")
+            st.error("❗ No property data available. Please perform a search first.")
 
 if __name__ == "__main__":
     main()
