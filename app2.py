@@ -1,4 +1,8 @@
 import os
+
+# Set Chroma to use DuckDB to avoid sqlite3 dependency
+os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
+
 import re
 import logging
 import pandas as pd
@@ -9,12 +13,8 @@ from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI as OpenAI_LLM
 import streamlit as st
-import pysqlite3
 from io import BytesIO
-import sys
 
-# Override the default sqlite3 with pysqlite3
-sys.modules['sqlite3'] = pysqlite3
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, 
@@ -284,11 +284,16 @@ def main():
         'price_range': price_range
     }
 
+    # Initialize session state for DataFrame
+    if 'df' not in st.session_state:
+        st.session_state.df = None
+
     if st.sidebar.button("Search Properties"):
         if openai_api_key and serper_api_key:
             with st.spinner("Searching for properties..."):
                 df, excel_data = run_property_search(openai_api_key, serper_api_key, search_params)
                 if df is not None:
+                    st.session_state.df = df
                     st.success("✅ Properties Found!")
                     st.dataframe(df)
                     st.download_button(
@@ -306,9 +311,9 @@ def main():
     user_query = st.text_input("Your Question:")
     if st.button("Submit Question"):
         if openai_api_key:
-            # Load existing property data
-            if 'df' in locals() and df is not None:
-                answer = handle_user_query(user_query, openai_api_key, df)
+            # Load existing property data from session state
+            if st.session_state.df is not None:
+                answer = handle_user_query(user_query, openai_api_key, st.session_state.df)
                 st.write(answer)
             else:
                 st.error("❗ No property data available. Please perform a search first.")
