@@ -12,8 +12,8 @@ if "OPENAI_API_KEY" in st.secrets:
 else:
     st.error("OpenAI API key not found in secrets.")
 
-if "SERPER_DEV_API_KEY" in st.secrets:
-    os.environ["SERPER_DEV_API_KEY"] = st.secrets["SERPER_DEV_API_KEY"]
+if "SERPER_API_KEY" in st.secrets:
+    os.environ["SERPER_API_KEY"] = st.secrets["SERPER_API_KEY"]
 else:
     st.error("Serper Dev API key not found in secrets.")
 
@@ -150,7 +150,7 @@ def create_real_estate_crew(search_params):
     """
     # Retrieve API keys
     openai_api_key = os.environ.get('OPENAI_API_KEY')
-    serper_api_key = os.environ.get('SERPER_DEV_API_KEY')
+    serper_api_key = os.environ.get('SERPER_API_KEY')
 
     if not openai_api_key or not serper_api_key:
         raise ValueError("Missing API keys in environment variables.")
@@ -207,7 +207,7 @@ def create_real_estate_crew(search_params):
     crew = Crew(
         agents=[real_estate_agent],
         tasks=[research_task],
-        verbose=1
+        verbose=2
     )
 
     return crew
@@ -311,11 +311,11 @@ def main():
     # 2. Display the app title
     st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
 
-    # Temporary debug statements (Remove after verification)
+    # 3. Display API Key Status (Temporary - Remove After Verification)
     st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
-    st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_DEV_API_KEY') else 'No'}")
+    st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_API_KEY') else 'No'}")
 
-    # 3. Sidebar configuration
+    # 4. Sidebar configuration
     st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox(
@@ -330,11 +330,11 @@ def main():
         'price_range': price_range
     }
 
-    # 4. Session state initialization
+    # 5. Session state initialization
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    # 5. Property search section
+    # 6. Property search section
     if st.sidebar.button("🔎 Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
             df, excel_data = run_property_search(search_params)
@@ -357,7 +357,7 @@ def main():
             else:
                 st.warning("⚠️ No properties found. Adjust search parameters.")
 
-    # 6. Query section
+    # 7. Query section
     st.header("💬 Intelligent Property Insights")
     user_query = st.text_input("Ask a detailed question about the properties")
     
@@ -369,9 +369,9 @@ def main():
         else:
             st.error("❗ Perform a property search first")
 
-    # Optional: Remove temporary debug statements after verification
+    # 8. Remove or comment out debug statements after verification
     # st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
-    # st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_DEV_API_KEY') else 'No'}")
+    # st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_API_KEY') else 'No'}")
 
 if __name__ == "__main__":
     main()
