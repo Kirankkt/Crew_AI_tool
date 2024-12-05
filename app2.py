@@ -1,8 +1,14 @@
 import os
+import sys
 
-# Set Chroma to use DuckDB to avoid sqlite3 dependency
+# 1. Set Chroma to use DuckDB to avoid sqlite3 dependency
 os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
 
+# 2. Import pysqlite3 and override the default sqlite3
+import pysqlite3
+sys.modules["sqlite3"] = pysqlite3
+
+# 3. Proceed with other imports after overriding sqlite3
 import re
 import logging
 import pandas as pd
