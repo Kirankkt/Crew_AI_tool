@@ -3,13 +3,13 @@ import sys
 import streamlit as st
 
 # 1. Set environment variables from Streamlit secrets
-if "openai_api_key" in st.secrets:
-    os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
+if "OPENAI_API_KEY" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
 else:
     st.error("OpenAI API key not found in secrets.")
 
-if "serper_dev_api_key" in st.secrets:
-    os.environ["SERPER_DEV_API_KEY"] = st.secrets["serper_dev_api_key"]
+if "SERPER_DEV_API_KEY" in st.secrets:
+    os.environ["SERPER_DEV_API_KEY"] = st.secrets["SERPER_DEV_API_KEY"]
 else:
     st.error("Serper Dev API key not found in secrets.")
 
@@ -45,6 +45,10 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s: %(message)s',
     filemode='w'
 )
+
+# Temporary debug statements (Remove after verification)
+st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
+st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_DEV_API_KEY') else 'No'}")
 
 def is_valid_url(url, retries=3, delay=2):
     """
@@ -222,10 +226,9 @@ def run_property_search(search_params):
         crew = create_real_estate_crew(search_params)
         results = crew.kickoff()
         
-        # Log the raw CrewAI results
+        # Log and display the raw CrewAI results
         logging.info(f"CrewAI Raw Results: {results}")
         
-        # Optionally, display raw results in the app for debugging (Remove in production)
         with st.expander("📄 Raw Search Results"):
             st.write(results)
         
@@ -370,6 +373,10 @@ def main():
                 st.write(answer)
         else:
             st.error("❗ Perform a property search first")
+
+    # Optional: Remove temporary debug statements after verification
+    # st.write(f"OpenAI API Key Set: {'Yes' if openai_api_key else 'No'}")
+    # st.write(f"Serper Dev API Key Set: {'Yes' if serper_api_key else 'No'}")
 
 if __name__ == "__main__":
     main()
