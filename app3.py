@@ -163,7 +163,7 @@ def create_real_estate_crew(search_params):
     # Configure the LLM
     llm = OpenAI_LLM(
         openai_api_key=openai_api_key,
-        model="gpt-3.5-turbo",
+        model="gpt-4o",
         temperature=0.7,
         max_tokens=2500
     )
