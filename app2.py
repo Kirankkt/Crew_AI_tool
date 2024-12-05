@@ -11,6 +11,7 @@ from langchain_openai import ChatOpenAI as OpenAI_LLM
 import streamlit as st
 import pysqlite3
 from io import BytesIO
+import sys
 
 # Override the default sqlite3 with pysqlite3
 sys.modules['sqlite3'] = pysqlite3
