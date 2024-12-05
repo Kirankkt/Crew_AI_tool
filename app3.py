@@ -1,14 +1,29 @@
 import os
 import sys
+import streamlit as st
 
-# 1. Set Chroma to use DuckDB to avoid sqlite3 dependency
+# 1. Set environment variables from Streamlit secrets
+if "openai_api_key" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
+else:
+    st.error("OpenAI API key not found in secrets.")
+
+if "serper_dev_api_key" in st.secrets:
+    os.environ["SERPER_DEV_API_KEY"] = st.secrets["serper_dev_api_key"]
+else:
+    st.error("Serper Dev API key not found in secrets.")
+
+# 2. Set Chroma to use DuckDB to avoid sqlite3 dependency
 os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
 
-# 2. Import pysqlite3 and override the default sqlite3
-import pysqlite3
-sys.modules["sqlite3"] = pysqlite3
+# 3. Import pysqlite3 and override the default sqlite3
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    st.warning("pysqlite3 is not installed. Proceeding without overriding sqlite3.")
 
-# 3. Standard imports
+# 4. Import other libraries after setting up environment and overriding modules
 import re
 import logging
 import pandas as pd
@@ -18,8 +33,11 @@ import time
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI as OpenAI_LLM
-import streamlit as st
 from io import BytesIO
+
+# 5. Suppress SyntaxWarnings from pysbd (optional)
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Configure logging
 logging.basicConfig(
@@ -85,8 +103,8 @@ def extract_properties_from_crew_output(crew_output):
         logging.error(f"Output extraction error: {e}")
         return []
 
-    # Enhanced regex for property extraction
-    pattern = r'(\d+)\.\s*Property Name:\s*(.*?)\s*Location:\s*(.*?)\s*Price:\s*(.*?)\s*Water View Type:\s*(.*?)\s*Contact Information:\s*(.*?)\s*Property Link:\s*(.*?)(?=\d+\.\s*|$)'
+    # Updated regex based on actual CrewAI output format
+    pattern = r'(\d+)\.\s*Property Name:\s*(.*?)\s*Location:\s*(.*?)\s*Price:\s*(.*?)\s*Water View Type:\s*(.*?)\s*Contact Information:\s*(.*?)\s*Property Link:\s*(.*?)(?=\n\d+\.\s*|$)'
 
     matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
 
@@ -132,17 +150,17 @@ def create_real_estate_crew(search_params):
     """
     # Retrieve API keys
     openai_api_key = os.environ.get('OPENAI_API_KEY')
-    serper_api_key = os.environ.get('SERPER_API_KEY')
+    serper_api_key = os.environ.get('SERPER_DEV_API_KEY')
 
     if not openai_api_key or not serper_api_key:
         raise ValueError("Missing API keys in environment variables.")
 
-    # Flexible search parameter handling
+    # Extract search parameters
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
 
-    # Enhanced LLM configuration
+    # Configure the LLM
     llm = OpenAI_LLM(
         openai_api_key=openai_api_key,
         model="gpt-3.5-turbo",
@@ -150,58 +168,42 @@ def create_real_estate_crew(search_params):
         max_tokens=2500
     )
 
-    # Web search tool
+    # Configure the SerperDevTool for web search
     search = SerperDevTool(api_key=serper_api_key)
 
-    # Advanced research agent
+    # Define the real estate research agent
     real_estate_agent = Agent(
         llm=llm,
-        role="Advanced Real Estate Data Intelligence Specialist",
-        goal=f"Comprehensively map {property_type} property landscape in {location}, uncovering diverse and verified listings",
+        role="Real Estate Data Specialist",
+        goal=f"Find and compile a list of {property_type.lower()} properties for sale in {location} within the price range {price_range}.",
         backstory=(
-            "A seasoned real estate data strategist with 25 years of experience, "
-            "utilizing cutting-edge research techniques to aggregate property information "
-            "from multiple sources, ensuring comprehensive market insights."
+            "An experienced real estate analyst adept at gathering and verifying property data from multiple sources."
         ),
         allow_delegation=True,
         tools=[search],
         verbose=True
     )
 
-    # Comprehensive research task
+    # Define the research task with clear instructions
     research_task = Task(
         description=f"""
-        Execute a multi-layered, comprehensive property search strategy:
-        
-        TARGET AREA: {location} and surrounding districts
-        PROPERTY TYPE: {property_type}
-        PRICE RANGE: {price_range}
+        Search for {property_type.lower()} properties for sale in {location}.
+        Ensure that properties have water views and are within the price range: {price_range}.
+        Use reputable real estate platforms and provide verified links.
+        Format each property as follows:
 
-        ADVANCED SEARCH PROTOCOLS:
-        - Cross-reference minimum 5-7 real estate platforms
-        - Verify property details through multiple independent sources
-        - Include properties from adjacent areas if {location} has limited listings
-        - Capture properties across different price segments
-        - Prioritize sale properties over rentals
-        
-        MANDATORY OUTPUT FORMAT:
-        'X. Property Name: [Detailed Name] 
-        Location: [Precise Location] 
-        Price: [Exact Price] 
-        Water View Type: [Specific View Description] 
-        Contact Information: [Comprehensive Contact] 
-        Property Link: [Most Reliable Verifiable Link]'
-        
-        CRITICAL: Maximum information density and link reliability!
+        '1. Property Name: [Name]
+        Location: [Location]
+        Price: [Price]
+        Water View Type: [Type]
+        Contact Information: [Contact]
+        Property Link: [Verified Link]'
         """,
-        expected_output=(
-            "Comprehensive list of 5-7 properties with "
-            "exhaustive, cross-verified information."
-        ),
+        expected_output="A list of 3-5 verified waterfront properties matching the search criteria.",
         agent=real_estate_agent,
     )
 
-    # Crew configuration
+    # Assemble the crew
     crew = Crew(
         agents=[real_estate_agent],
         tasks=[research_task],
@@ -220,9 +222,16 @@ def run_property_search(search_params):
         crew = create_real_estate_crew(search_params)
         results = crew.kickoff()
         
+        # Log the raw CrewAI results
+        logging.info(f"CrewAI Raw Results: {results}")
+        
+        # Optionally, display raw results in the app for debugging (Remove in production)
+        with st.expander("📄 Raw Search Results"):
+            st.write(results)
+        
         properties = extract_properties_from_crew_output(results)
         
-        logging.info(f"Search completed. Properties found: {len(properties)}")
+        logging.info(f"Properties extracted: {len(properties)}")
         
         if properties:
             df, excel_data = save_to_excel(properties)
@@ -302,10 +311,10 @@ def main():
 
     # Environment variable key check
     openai_api_key = os.environ.get('OPENAI_API_KEY')
-    serper_api_key = os.environ.get('SERPER_API_KEY')
+    serper_api_key = os.environ.get('SERPER_DEV_API_KEY')
 
     if not openai_api_key or not serper_api_key:
-        st.error("❌ API keys missing. Set OPENAI_API_KEY and SERPER_API_KEY in Streamlit secrets.")
+        st.error("❌ API keys missing. Set OPENAI_API_KEY and SERPER_DEV_API_KEY in Streamlit secrets.")
         st.stop()
 
     # Sidebar configuration
