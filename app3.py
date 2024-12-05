@@ -1,29 +1,14 @@
 import os
 import sys
-import streamlit as st
 
-# 1. Set environment variables from Streamlit secrets
-if "OPENAI_API_KEY" in st.secrets:
-    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
-else:
-    st.error("OpenAI API key not found in secrets.")
-
-if "SERPER_DEV_API_KEY" in st.secrets:
-    os.environ["SERPER_DEV_API_KEY"] = st.secrets["SERPER_DEV_API_KEY"]
-else:
-    st.error("Serper Dev API key not found in secrets.")
-
-# 2. Set Chroma to use DuckDB to avoid sqlite3 dependency
+# 1. Set Chroma to use DuckDB to avoid sqlite3 dependency
 os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
 
-# 3. Import pysqlite3 and override the default sqlite3
-try:
-    import pysqlite3
-    sys.modules["sqlite3"] = pysqlite3
-except ImportError:
-    st.warning("pysqlite3 is not installed. Proceeding without overriding sqlite3.")
+# 2. Import pysqlite3 and override the default sqlite3
+import pysqlite3
+sys.modules["sqlite3"] = pysqlite3
 
-# 4. Import other libraries after setting up environment and overriding modules
+# 3. Standard imports
 import re
 import logging
 import pandas as pd
@@ -33,11 +18,8 @@ import time
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI as OpenAI_LLM
+import streamlit as st
 from io import BytesIO
-
-# 5. Suppress SyntaxWarnings from pysbd (optional)
-import warnings
-warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 # Configure logging
 logging.basicConfig(
@@ -45,10 +27,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s: %(message)s',
     filemode='w'
 )
-
-# Temporary debug statements (Remove after verification)
-st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
-st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_DEV_API_KEY') else 'No'}")
 
 def is_valid_url(url, retries=3, delay=2):
     """
@@ -309,18 +287,13 @@ def handle_user_query(query, df):
         return f"Query processing failed. Error: {str(e)}"
 
 def main():
+    # 1. Set page config as the first Streamlit command
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
+    
+    # 2. Display the app title
     st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
 
-    # Environment variable key check
-    openai_api_key = os.environ.get('OPENAI_API_KEY')
-    serper_api_key = os.environ.get('SERPER_DEV_API_KEY')
-
-    if not openai_api_key or not serper_api_key:
-        st.error("❌ API keys missing. Set OPENAI_API_KEY and SERPER_DEV_API_KEY in Streamlit secrets.")
-        st.stop()
-
-    # Sidebar configuration
+    # 3. Sidebar configuration
     st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox(
@@ -335,11 +308,11 @@ def main():
         'price_range': price_range
     }
 
-    # Session state initialization
+    # 4. Session state initialization
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    # Property search section
+    # 5. Property search section
     if st.sidebar.button("🔎 Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
             df, excel_data = run_property_search(search_params)
@@ -362,7 +335,7 @@ def main():
             else:
                 st.warning("⚠️ No properties found. Adjust search parameters.")
 
-    # Query section
+    # 6. Query section
     st.header("💬 Intelligent Property Insights")
     user_query = st.text_input("Ask a detailed question about the properties")
     
@@ -375,8 +348,8 @@ def main():
             st.error("❗ Perform a property search first")
 
     # Optional: Remove temporary debug statements after verification
-    # st.write(f"OpenAI API Key Set: {'Yes' if openai_api_key else 'No'}")
-    # st.write(f"Serper Dev API Key Set: {'Yes' if serper_api_key else 'No'}")
+    # st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
+    # st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_DEV_API_KEY') else 'No'}")
 
 if __name__ == "__main__":
     main()
