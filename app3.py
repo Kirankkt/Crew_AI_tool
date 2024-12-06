@@ -163,7 +163,7 @@ def create_real_estate_crew(search_params):
     # Configure the LLM
     llm = OpenAI_LLM(
         openai_api_key=openai_api_key,
-        model="gpt-4o",
+        model="gpt-3.5-turbo",
         temperature=0.7,
         max_tokens=2500
     )
@@ -199,7 +199,7 @@ def create_real_estate_crew(search_params):
         Contact Information: [Contact]
         Property Link: [Verified Link]'
         """,
-        expected_output="A list of 3-5 verified waterfront properties matching the search criteria.",
+        expected_output="A list of atleast 10 verified waterfront properties matching the search criteria.",
         agent=real_estate_agent,
     )
 
