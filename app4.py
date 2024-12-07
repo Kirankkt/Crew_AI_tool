@@ -38,7 +38,7 @@ import requests
 import time
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
-from langchain.chat_models import ChatOpenAI  # Corrected import
+from langchain.chat_models import ChatOpenAI
 from io import BytesIO
 
 # 6. Configure logging
@@ -83,10 +83,8 @@ def validate_and_normalize_link(link):
     
     for pattern in url_patterns:
         if re.match(pattern, link, re.IGNORECASE):
-            # Ensure the link starts with http:// or https://
             if not link.startswith(('http://', 'https://')):
                 link = 'https://' + link
-            
             if is_valid_url(link):
                 return link
             else:
@@ -108,10 +106,7 @@ def extract_properties_from_crew_output(crew_output):
         logging.error(f"Output extraction error: {e}")
         return []
     
-    # Define a regex pattern based on the actual CrewAI output format
-    # Adjust the pattern as needed to match the output structure
     pattern = r'Title:\s*(.*?)\s*Link:\s*(.*?)\s*Snippet:\s*(.*?)\s*(?=Title:|$)'
-    
     matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
     
     properties = []
@@ -121,21 +116,18 @@ def extract_properties_from_crew_output(crew_output):
                 'Property Name': match[0].strip(),
                 'Link': validate_and_normalize_link(match[1].strip()),
                 'Snippet': match[2].strip(),
-                'Price': None,          # Initialize as None; can be extracted if available
-                'Location': 'Trivandrum'  # Assuming location from task parameters
+                'Price': None,
+                'Location': 'Trivandrum'
             }
             
-            # Attempt to extract Price from the Snippet using regex
+            # Extract Price from Snippet
             price_match = re.search(r'₹\s?([\d,]+)', property_dict['Snippet'])
             if price_match:
-                # Remove commas and convert to float
                 price_str = price_match.group(1).replace(',', '')
                 try:
                     property_dict['Price'] = float(price_str)
                 except ValueError:
                     property_dict['Price'] = None
-            else:
-                property_dict['Price'] = None  # Price not available
             
             properties.append(property_dict)
         except Exception as e:
@@ -165,19 +157,16 @@ def create_real_estate_crew(search_params):
     """
     Create CrewAI agents with enhanced, flexible search strategy.
     """
-    # Retrieve API keys
     openai_api_key = os.environ.get('OPENAI_API_KEY')
     serper_api_key = os.environ.get('SERPER_API_KEY')
 
     if not openai_api_key or not serper_api_key:
         raise ValueError("Missing API keys in environment variables.")
 
-    # Extract search parameters
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
 
-    # Configure the LLM
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
         model="gpt-3.5-turbo",
@@ -185,10 +174,8 @@ def create_real_estate_crew(search_params):
         max_tokens=2500
     )
 
-    # Configure the SerperDevTool for web search
     search = SerperDevTool(api_key=serper_api_key)
 
-    # Define the real estate research agent
     real_estate_agent = Agent(
         llm=llm,
         role="Real Estate Data Specialist",
@@ -201,7 +188,6 @@ def create_real_estate_crew(search_params):
         verbose=True
     )
 
-    # Define the research task with clear instructions
     research_task = Task(
         description=f"""
         Search for {property_type.lower()} properties for sale in {location}.
@@ -217,7 +203,6 @@ def create_real_estate_crew(search_params):
         agent=real_estate_agent,
     )
 
-    # Assemble the crew
     crew = Crew(
         agents=[real_estate_agent],
         tasks=[research_task],
@@ -236,7 +221,6 @@ def run_property_search(search_params):
         crew = create_real_estate_crew(search_params)
         results = crew.kickoff()
         
-        # Log and display the raw CrewAI results
         logging.info(f"CrewAI Raw Results: {results}")
         
         with st.expander("📄 Raw Search Results"):
@@ -269,12 +253,9 @@ def handle_user_query(query, df):
     if df is None or df.empty:
         return "No property data available. Perform a search first."
 
-    # Advanced query preprocessing
     try:
-        # Convert price to numeric, handling potential formatting issues
         df['Numeric_Price'] = pd.to_numeric(df['Price'], errors='coerce')
 
-        # Prepare comprehensive context
         context = f"""
         PROPERTY DATASET OVERVIEW:
         - Total Properties: {len(df)}
@@ -315,13 +296,9 @@ def handle_user_query(query, df):
         return f"Query processing failed. Error: {str(e)}"
 
 def main():
-    # 1. Set page config as the first Streamlit command
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
-    
-    # 2. Display the app title
     st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
 
-    # 3. Sidebar configuration
     st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox(
@@ -336,11 +313,9 @@ def main():
         'price_range': price_range
     }
 
-    # 4. Session state initialization
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    # 5. Property search section
     if st.sidebar.button("🔎 Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
             df, excel_data = run_property_search(search_params)
@@ -349,27 +324,19 @@ def main():
                 st.session_state.df = df
                 st.success(f"✅ Found {len(df)} Properties!")
                 
-                # Expandable property view with clickable links
                 with st.expander("📊 Property Details"):
-                    # Create a new DataFrame with clickable links
                     display_df = df.copy()
-                    display_df['Property Link'] = display_df['Link'].apply(lambda x: f"[Link]({x})")
-                    
-                    # Drop the original 'Link' column if desired
+                    # Use HTML anchor tags for clickable links
+                    display_df['Property Link'] = display_df['Link'].apply(lambda x: f'<a href="{x}" target="_blank">{x}</a>')
                     display_df = display_df.drop(columns=['Link'])
-                    
-                    # Reorder columns to place 'Property Link' appropriately
-                    # Removed 'Water View Type' and 'Contact Information' as they are not extracted
+
                     cols = ['Property Name', 'Property Link', 'Location', 'Price', 'Snippet']
-                    # Ensure all columns exist
                     cols = [col for col in cols if col in display_df.columns]
                     display_df = display_df[cols]
-                    
-                    # Convert DataFrame to HTML with clickable links
+
                     html_table = display_df.to_html(escape=False, index=False)
                     st.markdown(html_table, unsafe_allow_html=True)
                 
-                # Download button
                 st.download_button(
                     label="📥 Download Property Data",
                     data=excel_data,
@@ -379,10 +346,9 @@ def main():
             else:
                 st.warning("⚠️ No properties found. Adjust search parameters.")
 
-    # 6. Query section
     st.header("💬 Intelligent Property Insights")
     user_query = st.text_input("Ask a detailed question about the properties")
-    
+
     if st.button("Get Insights"):
         if st.session_state.df is not None:
             with st.spinner("Analyzing property data..."):
@@ -390,11 +356,6 @@ def main():
                 st.write(answer)
         else:
             st.error("❗ Perform a property search first")
-
-    # 7. Hide API Key Status from Main App Area (for security)
-    # Remove or comment out debug statements after verification
-    # st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
-    # st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_API_KEY') else 'No'}")
 
 if __name__ == "__main__":
     main()
