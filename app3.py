@@ -359,7 +359,10 @@ def main():
                     display_df = display_df.drop(columns=['Link'])
                     
                     # Reorder columns to place 'Property Link' appropriately
-                    cols = ['Property Name', 'Property Link', 'Location', 'Price', 'Water View Type', 'Contact Information', 'Snippet']
+                    # Removed 'Water View Type' and 'Contact Information' as they are not extracted
+                    cols = ['Property Name', 'Property Link', 'Location', 'Price', 'Snippet']
+                    # Ensure all columns exist
+                    cols = [col for col in cols if col in display_df.columns]
                     display_df = display_df[cols]
                     
                     # Convert DataFrame to HTML with clickable links
