@@ -6,4 +6,4 @@ pysqlite3-binary
 requests
 openpyxl
 duckdb
-openai==0.27.0
+openai
