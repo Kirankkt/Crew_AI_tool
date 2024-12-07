@@ -1,3 +1,5 @@
+# app_crewai.py
+
 import os
 import sys
 import streamlit as st
@@ -43,7 +45,10 @@ from io import BytesIO
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(levelname)s: %(message)s',
-    filemode='w'
+    handlers=[
+        logging.FileHandler("crew_output.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 def is_valid_url(url, retries=3, delay=2):
@@ -95,31 +100,43 @@ def extract_properties_from_crew_output(crew_output):
     Robust property extraction with improved error handling.
     """
     try:
-        # Multiple ways to extract output string
+        # Attempt to extract 'raw' output; adjust attribute names as necessary
         results_text = str(getattr(crew_output, 'raw', 
                          getattr(crew_output, 'result', 
                          str(crew_output))))
     except Exception as e:
         logging.error(f"Output extraction error: {e}")
         return []
-
-    # Updated regex based on actual CrewAI output format
-    pattern = r'(\d+)\.\s*Property Name:\s*(.*?)\s*Location:\s*(.*?)\s*Price:\s*(.*?)\s*Water View Type:\s*(.*?)\s*Contact Information:\s*(.*?)\s*Property Link:\s*(.*?)(?=\n\d+\.\s*|$)'
-
+    
+    # Define a regex pattern based on the actual CrewAI output format
+    # Adjust the pattern as needed to match the output structure
+    pattern = r'Title:\s*(.*?)\s*Link:\s*(.*?)\s*Snippet:\s*(.*?)\s*(?=Title:|$)'
+    
     matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
-
+    
     properties = []
     for match in matches:
         try:
             property_dict = {
-                'Property Number': match[0],
-                'Property Name': match[1].strip(),
-                'Location': match[2].strip(),
-                'Price': match[3].strip(),
-                'Water View Type': match[4].strip(),
-                'Contact Information': match[5].strip(),
-                'Property Link': validate_and_normalize_link(match[6].strip())
+                'Property Name': match[0].strip(),
+                'Link': validate_and_normalize_link(match[1].strip()),
+                'Snippet': match[2].strip(),
+                'Price': None,          # Initialize as None; can be extracted if available
+                'Location': 'Trivandrum'  # Assuming location from task parameters
             }
+            
+            # Attempt to extract Price from the Snippet using regex
+            price_match = re.search(r'₹\s?([\d,]+)', property_dict['Snippet'])
+            if price_match:
+                # Remove commas and convert to float
+                price_str = price_match.group(1).replace(',', '')
+                try:
+                    property_dict['Price'] = float(price_str)
+                except ValueError:
+                    property_dict['Price'] = None
+            else:
+                property_dict['Price'] = None  # Price not available
+            
             properties.append(property_dict)
         except Exception as e:
             logging.warning(f"Property processing error: {e}")
@@ -192,14 +209,11 @@ def create_real_estate_crew(search_params):
         Use reputable real estate platforms and provide verified links.
         Format each property as follows:
 
-        '1. Property Name: [Name]
-        Location: [Location]
-        Price: [Price]
-        Water View Type: [Type]
-        Contact Information: [Contact]
-        Property Link: [Verified Link]'
+        'Title: [Name]
+        Link: [Verified Link]
+        Snippet: [Description]'
         """,
-        expected_output="A list of atleast 10 verified waterfront properties matching the search criteria.",
+        expected_output="A list of at least 10 verified waterfront properties matching the search criteria.",
         agent=real_estate_agent,
     )
 
@@ -258,11 +272,7 @@ def handle_user_query(query, df):
     # Advanced query preprocessing
     try:
         # Convert price to numeric, handling potential formatting issues
-        df['Numeric_Price'] = df['Price'].replace({
-            '₹': '', 
-            ',': '', 
-            ' ': ''
-        }, regex=True).astype(float)
+        df['Numeric_Price'] = pd.to_numeric(df['Price'], errors='coerce')
 
         # Prepare comprehensive context
         context = f"""
@@ -311,11 +321,7 @@ def main():
     # 2. Display the app title
     st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
 
-    # 3. Display API Key Status (Temporary - Remove After Verification)
-    st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
-    st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_API_KEY') else 'No'}")
-
-    # 4. Sidebar configuration
+    # 3. Sidebar configuration
     st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox(
@@ -330,11 +336,11 @@ def main():
         'price_range': price_range
     }
 
-    # 5. Session state initialization
+    # 4. Session state initialization
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    # 6. Property search section
+    # 5. Property search section
     if st.sidebar.button("🔎 Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
             df, excel_data = run_property_search(search_params)
@@ -343,9 +349,22 @@ def main():
                 st.session_state.df = df
                 st.success(f"✅ Found {len(df)} Properties!")
                 
-                # Expandable property view
+                # Expandable property view with clickable links
                 with st.expander("📊 Property Details"):
-                    st.dataframe(df)
+                    # Create a new DataFrame with clickable links
+                    display_df = df.copy()
+                    display_df['Property Link'] = display_df['Link'].apply(lambda x: f"[Link]({x})")
+                    
+                    # Drop the original 'Link' column if desired
+                    display_df = display_df.drop(columns=['Link'])
+                    
+                    # Reorder columns to place 'Property Link' appropriately
+                    cols = ['Property Name', 'Property Link', 'Location', 'Price', 'Water View Type', 'Contact Information', 'Snippet']
+                    display_df = display_df[cols]
+                    
+                    # Convert DataFrame to HTML with clickable links
+                    html_table = display_df.to_html(escape=False, index=False)
+                    st.markdown(html_table, unsafe_allow_html=True)
                 
                 # Download button
                 st.download_button(
@@ -357,7 +376,7 @@ def main():
             else:
                 st.warning("⚠️ No properties found. Adjust search parameters.")
 
-    # 7. Query section
+    # 6. Query section
     st.header("💬 Intelligent Property Insights")
     user_query = st.text_input("Ask a detailed question about the properties")
     
@@ -369,7 +388,8 @@ def main():
         else:
             st.error("❗ Perform a property search first")
 
-    # 8. Remove or comment out debug statements after verification
+    # 7. Hide API Key Status from Main App Area (for security)
+    # Remove or comment out debug statements after verification
     # st.write(f"OpenAI API Key Set: {'Yes' if os.getenv('OPENAI_API_KEY') else 'No'}")
     # st.write(f"Serper Dev API Key Set: {'Yes' if os.getenv('SERPER_API_KEY') else 'No'}")
 
