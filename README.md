@@ -1,2 +1,2 @@
-Trivandrum Real Estate Intelligence Platform
+Trivandrum Real Estate Intelligence Platform:
 This project is a Streamlit-based web application designed to search, analyze, and display real estate properties in Trivandrum, Kerala. It leverages CrewAI agents, OpenAI's GPT-3.5, and Serper API to dynamically scrape and curate property data from various sources. The platform aims to assist users in identifying prime real estate properties like waterfront plots, apartments, villas, and more.
