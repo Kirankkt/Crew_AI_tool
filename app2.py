@@ -231,60 +231,6 @@ def run_property_search(search_params):
         logging.error(f"Comprehensive search failed: {e}", exc_info=True)
         return None, None
 
-def handle_user_query(query, df):
-    """
-    Advanced query processing with comprehensive data analysis.
-    """
-    openai_api_key = os.environ.get('OPENAI_API_KEY')
-
-    if not openai_api_key:
-        return "OpenAI API key is missing from environment variables."
-
-    if df is None or df.empty:
-        return "No property data available. Perform a search first."
-
-    try:
-        df['Numeric_Price'] = pd.to_numeric(df['Price'], errors='coerce')
-
-        context = f"""
-        PROPERTY DATASET OVERVIEW:
-        - Total Properties: {len(df)}
-        - Price Statistics:
-          * Minimum Price: ₹{df['Numeric_Price'].min():,.2f}
-          * Maximum Price: ₹{df['Numeric_Price'].max():,.2f}
-          * Average Price: ₹{df['Numeric_Price'].mean():,.2f}
-          * Median Price: ₹{df['Numeric_Price'].median():,.2f}
-
-        Columns: {', '.join(df.columns)}
-        """
-
-        preprocessed_query = f"""
-        ADVANCED REAL ESTATE DATA ANALYSIS
-
-        {context}
-
-        USER QUERY: {query}
-
-        Provide a comprehensive, data-driven response using the available dataset.
-        If direct data is insufficient, explain limitations and provide contextual insights.
-        """
-
-        openai.api_key = openai_api_key
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a precise real estate data analyst."},
-                {"role": "user", "content": preprocessed_query}
-            ],
-            temperature=0.3,
-        )
-        
-        return response.choices[0].message['content']
-
-    except Exception as e:
-        logging.error(f"Query processing error: {e}", exc_info=True)
-        return f"Query processing failed. Error: {str(e)}"
-
 def main():
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
     st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
@@ -342,17 +288,6 @@ def main():
                 )
             else:
                 st.warning("⚠️ No properties found. Adjust search parameters.")
-
-    st.header("💬 Intelligent Property Insights")
-    user_query = st.text_input("Ask a detailed question about the properties")
-
-    if st.button("Get Insights"):
-        if st.session_state.df is not None:
-            with st.spinner("Analyzing property data..."):
-                answer = handle_user_query(user_query, st.session_state.df)
-                st.write(answer)
-        else:
-            st.error("❗ Perform a property search first")
 
 if __name__ == "__main__":
     main()
