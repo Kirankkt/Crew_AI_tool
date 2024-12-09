@@ -7,3 +7,4 @@ requests
 openpyxl
 duckdb
 openai
+langchain-community
