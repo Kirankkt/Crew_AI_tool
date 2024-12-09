@@ -96,7 +96,7 @@ def extract_properties_from_crew_output(crew_output):
         logging.error(f"Output extraction error: {e}")
         return []
     
-    pattern = r'Title:\s*(.*?)\s*Link:\s*(.*?)\s*Snippet:\s*(.*?)\s*(?=Title:|$)'
+    pattern = r'Title:\s*(.?)\s*Link:\s(.?)\s*Snippet:\s(.?)\s(?=Title:|$)'
     matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
     
     properties = []
@@ -156,11 +156,10 @@ def create_real_estate_crew(search_params):
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
-    selected_model = search_params.get('model', 'gpt-3.5-turbo')
 
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
-        model=selected_model,
+        model="gpt-3.5-turbo",
         temperature=0.7,
         max_tokens=2500
     )
@@ -234,7 +233,7 @@ def run_property_search(search_params):
 
 def main():
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
-    st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
+    st.title("🏘 Trivandrum Real Estate Intelligence Platform")
 
     st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
@@ -244,19 +243,10 @@ def main():
     )
     price_range = st.sidebar.text_input("Price Range", "Any")
 
-    st.sidebar.markdown("**Select Model**")
-    st.sidebar.markdown("*Note: gpt-4 and gpt-4-32k are costlier options.*")
-    model_choice = st.sidebar.radio(
-        "Model",
-        options=["gpt-3.5-turbo", "gpt-4", "gpt-4-32k"],
-        index=0
-    )
-
     search_params = {
         'location': location,
         'property_type': property_type,
-        'price_range': price_range,
-        'model': model_choice
+        'price_range': price_range
     }
 
     if 'df' not in st.session_state:
@@ -297,7 +287,7 @@ def main():
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
             else:
-                st.warning("⚠️ No properties found. Adjust search parameters.")
+                st.warning("⚠ No properties found. Adjust search parameters.")
 
-if __name__ == "__main__":
-    main()
+if _name_ == "_main_":
+    main()
