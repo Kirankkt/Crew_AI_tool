@@ -1,14 +1,33 @@
+# app_crewai.py
+
 import os
 import sys
+import streamlit as st
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-# 1. Set Chroma to use DuckDB to avoid sqlite3 dependency
+# 2. Set environment variables from Streamlit secrets
+if "OPENAI_API_KEY" in st.secrets:
+    os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
+else:
+    st.error("OpenAI API key not found in secrets.")
+
+if "SERPER_API_KEY" in st.secrets:
+    os.environ["SERPER_API_KEY"] = st.secrets["SERPER_API_KEY"]
+else:
+    st.error("Serper Dev API key not found in secrets.")
+
+# 3. Set Chroma to use DuckDB to avoid sqlite3 dependency
 os.environ["CHROMA_DB_IMPL"] = "duckdb+parquet"
 
-# 2. Import pysqlite3 and override the default sqlite3
-import pysqlite3
-sys.modules["sqlite3"] = pysqlite3
+# 4. Import pysqlite3 and override the default sqlite3
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    st.warning("pysqlite3 is not installed. Proceeding without overriding sqlite3.")
 
-# 3. Proceed with other imports after overriding sqlite3
+# 5. Import other libraries after setting up environment and overriding modules
 import re
 import logging
 import pandas as pd
@@ -17,21 +36,22 @@ import requests
 import time
 from crewai import Crew, Task, Agent
 from crewai_tools import SerperDevTool
-from langchain_openai import ChatOpenAI as OpenAI_LLM
-import streamlit as st
+from langchain.chat_models import ChatOpenAI
 from io import BytesIO
 
-# Configure logging
+# 6. Configure logging
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(levelname)s: %(message)s',
-    filemode='w'
+    handlers=[
+        logging.FileHandler("crew_output.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 def is_valid_url(url, retries=3, delay=2):
     """
-    Check if a URL is valid by sending a HEAD request.
-    Retries a specified number of times in case of transient failures.
+    Validate URL with multiple retry attempts.
     """
     for attempt in range(retries):
         try:
@@ -41,170 +61,138 @@ def is_valid_url(url, retries=3, delay=2):
             else:
                 logging.warning(f"URL check failed ({response.status_code}): {url}")
         except requests.RequestException as e:
-            logging.warning(f"Attempt {attempt + 1} failed for URL: {url} with error: {e}")
+            logging.warning(f"URL attempt {attempt + 1} failed: {e}")
         time.sleep(delay)
     return False
 
 def validate_and_normalize_link(link):
     """
-    Validate and normalize property links.
-    Ensures the link is properly formatted and points to a valid page.
+    Try to return a valid link. If invalid, return the original text.
     """
-    url_patterns = [
-        r'^https?://www\.magicbricks\.com/property-details/\S+',
-        r'^https?://www\.99acres\.com/property/\S+',
-        r'^https?://\S+',      # Generic HTTP/HTTPS URLs
-        r'^www\.\S+',          # URLs starting with www
-        r'^\S+\.(com|in|org|net)\S*'  # URLs containing common TLDs
-    ]
-    
-    # Remove any trailing characters or whitespace
     link = link.strip()
-    
-    for pattern in url_patterns:
-        if re.match(pattern, link, re.IGNORECASE):
-            # Ensure the link starts with http:// or https://
-            if not link.startswith(('http://', 'https://')):
-                link = 'https://' + link
-            
-            if is_valid_url(link):
-                return link
-            else:
-                logging.warning(f"Invalid URL detected: {link}")
-                return f"Invalid Property Link: {link}"
-    
-    # If no valid link found, return a meaningful placeholder
-    return f"Property Link Not Available: {link}" if link else "No Link Provided"
+    # If link already starts with http or https, verify directly
+    if link.startswith('http://') or link.startswith('https://'):
+        if is_valid_url(link):
+            return link
+        else:
+            return link  # Return original text if invalid
+    else:
+        # If not starting with http(s), try prefixing with https://
+        potential_link = 'https://' + link
+        if is_valid_url(potential_link):
+            return potential_link
+        else:
+            # If still invalid, return original text
+            return link
 
 def extract_properties_from_crew_output(crew_output):
     """
-    Extract properties from CrewAI output object with improved link handling.
+    Robust property extraction with improved error handling.
     """
     try:
-        # Try different methods to extract string content
-        if hasattr(crew_output, 'raw'):
-            results_text = str(crew_output.raw)
-        elif hasattr(crew_output, 'result'):
-            results_text = str(crew_output.result)
-        else:
-            results_text = str(crew_output)
+        # Attempt to extract 'raw' output; adjust attribute names as necessary
+        results_text = str(getattr(crew_output, 'raw', getattr(crew_output, 'result', str(crew_output))))
     except Exception as e:
-        logging.error(f"Error converting output to string: {e}")
+        logging.error(f"Output extraction error: {e}")
         return []
-
-    # Regex pattern to extract property details
-    pattern = r'(\d+)\.\s*Property Name:\s*(.*?)\s*Location:\s*(.*?)\s*Price:\s*(.*?)\s*Water View Type:\s*(.*?)\s*Contact Information:\s*(.*?)\s*Property Link:\s*(.*?)(?=\d+\.\s*|$)'
-
-    # Find all matches
+    
+    pattern = r'Title:\s*(.*?)\s*Link:\s*(.*?)\s*Snippet:\s*(.*?)\s*(?=Title:|$)'
     matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
-
-    # Convert to list of dictionaries
+    
     properties = []
     for match in matches:
         try:
             property_dict = {
-                'Property Number': match[0],
-                'Property Name': match[1].strip(),
-                'Location': match[2].strip(),
-                'Price': match[3].strip(),
-                'Water View Type': match[4].strip(),
-                'Contact Information': match[5].strip(),
-                'Property Link': validate_and_normalize_link(match[6].strip())
+                'Property Name': match[0].strip(),
+                'Link': validate_and_normalize_link(match[1].strip()),
+                'Snippet': match[2].strip(),
+                'Price': None,
+                'Location': 'Trivandrum'
             }
+            
+            # Extract Price from Snippet
+            price_match = re.search(r'₹\s?([\d,]+)', property_dict['Snippet'])
+            if price_match:
+                price_str = price_match.group(1).replace(',', '')
+                try:
+                    property_dict['Price'] = float(price_str)
+                except ValueError:
+                    property_dict['Price'] = None
+            
             properties.append(property_dict)
         except Exception as e:
-            logging.warning(f"Error processing property: {e}")
+            logging.warning(f"Property processing error: {e}")
     
     return properties
 
 def save_to_excel(properties, filename='trivandrum_real_estate_properties.xlsx'):
     """
-    Save properties to an Excel file.
+    Save properties to Excel with error handling.
     """
     try:
-        # Create DataFrame
         df = pd.DataFrame(properties)
         
-        # Save to Excel using a BytesIO buffer
         output = BytesIO()
         df.to_excel(output, index=False, engine='openpyxl')
         excel_data = output.getvalue()
         
-        logging.info(f"Excel file successfully created: {filename}")
+        logging.info(f"Excel file created: {filename}")
         return df, excel_data
     
     except Exception as e:
-        logging.error(f"Error creating Excel file: {e}")
+        logging.error(f"Excel creation error: {e}")
         return None, None
 
 def create_real_estate_crew(search_params):
     """
-    Create and configure the CrewAI agents and tasks with dynamic search parameters.
+    Create CrewAI agents with enhanced, flexible search strategy.
     """
-    # Retrieve API keys from environment variables
     openai_api_key = os.environ.get('OPENAI_API_KEY')
     serper_api_key = os.environ.get('SERPER_API_KEY')
 
     if not openai_api_key or not serper_api_key:
-        raise ValueError("Missing API keys. Please set OPENAI_API_KEY and SERPER_API_KEY in environment variables.")
+        raise ValueError("Missing API keys in environment variables.")
 
-    # Extract search parameters
     location = search_params.get('location', 'Trivandrum')
-    property_type = search_params.get('property_type', 'waterfront')
-    price_range = search_params.get('price_range', 'any')
+    property_type = search_params.get('property_type', 'Waterfront')
+    price_range = search_params.get('price_range', 'Any')
 
-    # Create the primary LLM
-    llm = OpenAI_LLM(
+    llm = ChatOpenAI(
         openai_api_key=openai_api_key,
         model="gpt-3.5-turbo",
-        temperature=0.5,
-        max_tokens=1500
+        temperature=0.7,
+        max_tokens=2500
     )
 
-    # SerperDevTool setup for web search
     search = SerperDevTool(api_key=serper_api_key)
 
-    # Define the real estate research agent
     real_estate_agent = Agent(
         llm=llm,
-        role="Senior Real Estate Researcher",
-        goal=f"Find promising {property_type} properties for sale in {location} district near water bodies",
+        role="Real Estate Data Specialist",
+        goal=f"Find and compile a list of {property_type.lower()} properties for sale in {location} within the price range {price_range}.",
         backstory=(
-            "A veteran Real Estate Agent with 50 years of experience in Trivandrum real estate, "
-            "specializing in identifying unique waterfront properties. Known for meticulous research "
-            "and ability to uncover hidden property gems near water bodies."
+            "An experienced real estate analyst adept at gathering and verifying property data from multiple sources."
         ),
         allow_delegation=True,
         tools=[search],
         verbose=True
     )
 
-    # Define the research task with enhanced instructions
-    description = (
-        f"Conduct a comprehensive search for {property_type} properties near water bodies in {location} district. "
-        "Focus on properties with sea, beach, lake, or river views that are currently for sale. "
-        f"Price range: {price_range}. "
-        "\n\nCRITICAL REQUIREMENTS:"
-        "\n- Prioritize properties actually for SALE, not rentals"
-        "\n- Include VERIFIED property links from reputable sources"
-        "\n- Use local real estate websites like MagicBricks, 99acres, or local Trivandrum portals"
-        "\n- If no direct link is available, provide most relevant contact information"
-        "\n\nOutput Format (EXACTLY):"
-        "\n'1. Property Name: [Name] Location: [Location] Price: [Price] "
-        "Water View Type: [View Type] Contact Information: [Contact] "
-        "Property Link: [VERIFIED LINK]'"
-    )
-
     research_task = Task(
-        description=description,
-        expected_output=(
-            "Detailed list of 3-5 waterfront properties with complete, verifiable information. "
-            "Each property must have a comprehensive description and a valid link."
-        ),
+        description=f"""
+        Search for {property_type.lower()} properties for sale in {location}.
+        Ensure that properties have water views and are within the price range: {price_range}.
+        Use reputable real estate platforms and provide verified links.
+        Format each property as follows:
+
+        'Title: [Name]
+        Link: [Verified Link]
+        Snippet: [Description]'
+        """,
+        expected_output="A list of at least 10 verified waterfront properties matching the search criteria.",
         agent=real_estate_agent,
     )
 
-    # Assemble the crew
     crew = Crew(
         agents=[real_estate_agent],
         tasks=[research_task],
@@ -215,89 +203,98 @@ def create_real_estate_crew(search_params):
 
 def run_property_search(search_params):
     """
-    Main function to run the property search.
+    Enhanced property search with robust error management.
     """
     try:
-        # Log the start of the search
-        logging.info("Starting Trivandrum waterfront property search")
+        logging.info("Initiating comprehensive property search")
         
-        # Create and run the crew
         crew = create_real_estate_crew(search_params)
         results = crew.kickoff()
         
-        # Extract properties from CrewAI output
+        logging.info(f"CrewAI Raw Results: {results}")
+        
+        with st.expander("📄 Raw Search Results"):
+            st.write(results)
+        
         properties = extract_properties_from_crew_output(results)
         
-        # Log the number of properties found
-        logging.info(f"Found {len(properties)} properties")
+        logging.info(f"Properties extracted: {len(properties)}")
         
         if properties:
             df, excel_data = save_to_excel(properties)
             return df, excel_data
         else:
-            logging.warning("No properties found in the results")
+            logging.warning("No properties discovered in search results")
             return None, None
     
     except Exception as e:
-        logging.error(f"An error occurred: {e}", exc_info=True)
+        logging.error(f"Comprehensive search failed: {e}", exc_info=True)
         return None, None
 
 def handle_user_query(query, df):
     """
-    Handle dynamic user queries based on the current property data.
+    Advanced query processing with comprehensive data analysis.
     """
-    # Retrieve OpenAI API key from environment variables
     openai_api_key = os.environ.get('OPENAI_API_KEY')
 
     if not openai_api_key:
-        return "OpenAI API key is missing. Please set it in environment variables."
+        return "OpenAI API key is missing from environment variables."
 
     if df is None or df.empty:
-        return "No property data available. Please perform a search first."
+        return "No property data available. Perform a search first."
 
-    # Create a prompt based on the user's question and the data
-    prompt = f"""
-    You are a real estate assistant. Here are the properties found:
-
-    {df.to_string(index=False)}
-
-    Based on the above data, answer the following question:
-
-    {query}
-    """
-
-    # Use OpenAI API to get the answer
     try:
+        df['Numeric_Price'] = pd.to_numeric(df['Price'], errors='coerce')
+
+        context = f"""
+        PROPERTY DATASET OVERVIEW:
+        - Total Properties: {len(df)}
+        - Price Statistics:
+          * Minimum Price: ₹{df['Numeric_Price'].min():,.2f}
+          * Maximum Price: ₹{df['Numeric_Price'].max():,.2f}
+          * Average Price: ₹{df['Numeric_Price'].mean():,.2f}
+          * Median Price: ₹{df['Numeric_Price'].median():,.2f}
+
+        Columns: {', '.join(df.columns)}
+        """
+
+        preprocessed_query = f"""
+        ADVANCED REAL ESTATE DATA ANALYSIS
+
+        {context}
+
+        USER QUERY: {query}
+
+        Provide a comprehensive, data-driven response using the available dataset.
+        If direct data is insufficient, explain limitations and provide contextual insights.
+        """
+
         openai.api_key = openai_api_key
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a helpful real estate assistant."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": "You are a precise real estate data analyst."},
+                {"role": "user", "content": preprocessed_query}
             ],
-            temperature=0.5,
+            temperature=0.3,
         )
+        
         return response.choices[0].message['content']
+
     except Exception as e:
-        logging.error(f"Error handling user query: {e}")
-        return "An error occurred while processing your query."
+        logging.error(f"Query processing error: {e}", exc_info=True)
+        return f"Query processing failed. Error: {str(e)}"
 
 def main():
-    st.set_page_config(page_title="Trivandrum Real Estate Assistant", layout="wide")
-    st.title("🏠 Trivandrum Real Estate Assistant")
+    st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
+    st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
 
-    # Check for API keys in environment variables
-    openai_api_key = os.environ.get('OPENAI_API_KEY')
-    serper_api_key = os.environ.get('SERPER_API_KEY')
-
-    # Warn if API keys are missing
-    if not openai_api_key or not serper_api_key:
-        st.error("❗ API keys are missing. Please set OPENAI_API_KEY and SERPER_API_KEY in Streamlit Cloud secrets.")
-        st.stop()
-
-    st.sidebar.header("🔍 Search Parameters")
+    st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
-    property_type = st.sidebar.selectbox("Property Type", ["Waterfront", "Apartment", "Villa", "Commercial"])
+    property_type = st.sidebar.selectbox(
+        "Property Type", 
+        ["Waterfront", "Apartment", "Villa", "Commercial", "Land"]
+    )
     price_range = st.sidebar.text_input("Price Range", "Any")
 
     search_params = {
@@ -306,35 +303,56 @@ def main():
         'price_range': price_range
     }
 
-    # Initialize session state for DataFrame
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    if st.sidebar.button("Search Properties"):
-        with st.spinner("Searching for properties..."):
+    if st.sidebar.button("🔎 Search Properties"):
+        with st.spinner("Conducting comprehensive property search..."):
             df, excel_data = run_property_search(search_params)
-            if df is not None:
+            
+            if df is not None and not df.empty:
                 st.session_state.df = df
-                st.success("✅ Properties Found!")
-                st.dataframe(df)
+                st.success(f"✅ Found {len(df)} Properties!")
+                
+                # Function to create clickable hyperlinks only if URL is valid
+                def make_hyperlink(url):
+                    url = url.strip()
+                    if url.startswith('http://') or url.startswith('https://'):
+                        return f'<a href="{url}" target="_blank">{url}</a>'
+                    else:
+                        return url
+
+                with st.expander("📊 Property Details"):
+                    display_df = df.copy()
+                    display_df['Property Link'] = display_df['Link'].apply(make_hyperlink)
+                    display_df = display_df.drop(columns=['Link'])
+
+                    cols = ['Property Name', 'Property Link', 'Location', 'Price', 'Snippet']
+                    cols = [col for col in cols if col in display_df.columns]
+                    display_df = display_df[cols]
+
+                    html_table = display_df.to_html(escape=False, index=False)
+                    st.markdown(html_table, unsafe_allow_html=True)
+                
                 st.download_button(
-                    label="📥 Download Excel",
+                    label="📥 Download Property Data",
                     data=excel_data,
                     file_name='trivandrum_real_estate_properties.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
             else:
-                st.warning("⚠️ No properties found. Please try different search parameters.")
+                st.warning("⚠️ No properties found. Adjust search parameters.")
 
-    st.header("💬 Ask a Question")
-    user_query = st.text_input("Your Question:")
-    if st.button("Submit Question"):
-        # Load existing property data from session state
+    st.header("💬 Intelligent Property Insights")
+    user_query = st.text_input("Ask a detailed question about the properties")
+
+    if st.button("Get Insights"):
         if st.session_state.df is not None:
-            answer = handle_user_query(user_query, st.session_state.df)
-            st.write(answer)
+            with st.spinner("Analyzing property data..."):
+                answer = handle_user_query(user_query, st.session_state.df)
+                st.write(answer)
         else:
-            st.error("❗ No property data available. Please perform a search first.")
+            st.error("❗ Perform a property search first")
 
 if __name__ == "__main__":
     main()
