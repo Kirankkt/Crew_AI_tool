@@ -96,7 +96,7 @@ def extract_properties_from_crew_output(crew_output):
         logging.error(f"Output extraction error: {e}")
         return []
     
-    pattern = r'Title:\s*(.?)\s*Link:\s(.?)\s*Snippet:\s(.?)\s(?=Title:|$)'
+    pattern = r'Title:\s*(.*?)\s*Link:\s*(.*?)\s*Snippet:\s*(.*?)\s*(?=Title:|$)'
     matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
     
     properties = []
@@ -233,7 +233,7 @@ def run_property_search(search_params):
 
 def main():
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
-    st.title("🏘 Trivandrum Real Estate Intelligence Platform")
+    st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
 
     st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
@@ -287,7 +287,7 @@ def main():
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
             else:
-                st.warning("⚠ No properties found. Adjust search parameters.")
+                st.warning("⚠️ No properties found. Adjust search parameters.")
 
-if _name_ == "_main_":
-    main()
+if __name__ == "__main__":
+    main()
