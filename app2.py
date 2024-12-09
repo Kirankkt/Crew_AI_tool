@@ -156,10 +156,11 @@ def create_real_estate_crew(search_params):
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
+    selected_model = search_params.get('model', 'gpt-3.5-turbo')
 
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
-        model="gpt-3.5-turbo",
+        model=selected_model,
         temperature=0.7,
         max_tokens=2500
     )
@@ -243,10 +244,19 @@ def main():
     )
     price_range = st.sidebar.text_input("Price Range", "Any")
 
+    st.sidebar.markdown("**Select Model**")
+    st.sidebar.markdown("*Note: gpt-4 and gpt-4-32k are costlier options.*")
+    model_choice = st.sidebar.radio(
+        "Model",
+        options=["gpt-3.5-turbo", "gpt-4", "gpt-4-32k"],
+        index=0
+    )
+
     search_params = {
         'location': location,
         'property_type': property_type,
-        'price_range': price_range
+        'price_range': price_range,
+        'model': model_choice
     }
 
     if 'df' not in st.session_state:
