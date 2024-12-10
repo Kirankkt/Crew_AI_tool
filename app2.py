@@ -169,7 +169,7 @@ def create_real_estate_crew(search_params):
     real_estate_agent = Agent(
         llm=llm,
         role="Real Estate Data Specialist",
-        goal=f"Find and compile a list of {property_type.lower()} properties for sale in {location} within the price range {price_range}.",
+        goal=f"Find and compile a list of {property_type.lower()} properties for sale in {location} within the price range {price_range} (amounts in rupees).",
         backstory=(
             "An experienced real estate analyst adept at gathering and verifying property data from multiple sources."
         ),
@@ -181,13 +181,13 @@ def create_real_estate_crew(search_params):
     research_task = Task(
         description=f"""
         Search for {property_type.lower()} properties for sale in {location}.
-        Ensure that properties have water views and are within the price range: {price_range}.
+        Ensure that properties have water views and are within the price range: {price_range} (amounts in rupees).
         Use reputable real estate platforms and provide verified links.
         Format each property as follows:
 
         'Title: [Name]
         Link: [Verified Link]
-        Snippet: [Description]'
+        Snippet: [Description] (price in rupees)'
         """,
         expected_output="A list of at least 10 verified waterfront properties matching the search criteria.",
         agent=real_estate_agent,
@@ -241,7 +241,19 @@ def main():
         "Property Type", 
         ["Waterfront", "Apartment", "Villa", "Commercial", "Land"]
     )
-    price_range = st.sidebar.text_input("Price Range", "Any")
+    price_range = st.sidebar.selectbox(
+        "Price Range (in ₹)",
+        [
+            "Any", 
+            "₹0 - ₹10,00,000", 
+            "₹10,00,001 - ₹50,00,000", 
+            "₹50,00,001 - ₹1,00,00,000", 
+            "₹1,00,00,001 - ₹2,00,00,000", 
+            "₹2,00,00,001 - ₹5,00,00,000", 
+            "₹5,00,00,001 - ₹10,00,00,000", 
+            "₹10,00,00,001 and above"
+        ]
+    )
 
     search_params = {
         'location': location,
