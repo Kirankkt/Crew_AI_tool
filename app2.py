@@ -47,21 +47,9 @@ logging.basicConfig(
     ]
 )
 
-def calculate_proximity_condition(latitudes, longitudes, radius_km=5):
+def create_real_estate_crew(search_params, latitudes=None, longitudes=None):
     """
-    Generate a geospatial condition string for properties near specific lat/lon.
-    """
-    condition = " or ".join(
-        [
-            f"near latitude {lat} and longitude {lon} within {radius_km} km"
-            for lat, lon in zip(latitudes, longitudes)
-        ]
-    )
-    return condition
-
-def create_real_estate_crew(search_params, latitudes=None, longitudes=None, radius_km=5):
-    """
-    Create CrewAI agents with geospatial filtering when latitude/longitude is provided.
+    Create CrewAI agents for specific waterfront property search in predefined locations.
     """
     openai_api_key = os.environ.get('OPENAI_API_KEY')
     serper_api_key = os.environ.get('SERPER_API_KEY')
@@ -73,9 +61,12 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None, radi
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
 
-    geospatial_filter = ""
-    if latitudes and longitudes:
-        geospatial_filter = calculate_proximity_condition(latitudes, longitudes, radius_km)
+    predefined_locations = (
+        "near latitude 8.3551545319759 and longitude 77.03136608465745, "
+        "near latitude 8.414619893463565 and longitude 76.979652, "
+        "near latitude 8.438422207850575 and longitude 76.95568054232872, "
+        "near latitude 8.612380983078557 and longitude 76.83407053833807"
+    )
 
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
@@ -91,8 +82,7 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None, radi
         role="Real Estate Data Specialist",
         goal=(
             f"Find and compile a list of {property_type.lower()} properties for sale "
-            f"in {location} within the price range {price_range} (amounts in rupees). "
-            f"{geospatial_filter}."
+            f"in {location} within the price range {price_range} (amounts in rupees), specifically in these locations: {predefined_locations}."
         ),
         backstory=(
             "An experienced real estate analyst adept at gathering and verifying property data from multiple sources."
@@ -106,7 +96,7 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None, radi
         description=f"""
         Search for {property_type.lower()} properties for sale in {location}.
         Ensure properties have water views, are within the price range {price_range} (amounts in rupees),
-        and meet the geospatial criteria: {geospatial_filter}.
+        and are located in the following predefined areas: {predefined_locations}.
         Use reputable real estate platforms and provide verified links.
         Format each property as follows:
 
@@ -126,14 +116,17 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None, radi
 
     return crew
 
-def run_property_search(search_params, latitudes=None, longitudes=None, radius_km=5):
+def run_property_search(search_params):
     """
-    Enhanced property search with robust error management.
+    Enhanced property search with predefined locations.
     """
     try:
         logging.info("Initiating comprehensive property search")
 
-        crew = create_real_estate_crew(search_params, latitudes, longitudes, radius_km)
+        latitudes = [8.3551545319759, 8.414619893463565, 8.438422207850575, 8.612380983078557]
+        longitudes = [77.03136608465745, 76.979652, 76.95568054232872, 76.83407053833807]
+
+        crew = create_real_estate_crew(search_params, latitudes, longitudes)
         results = crew.kickoff()
 
         logging.info(f"CrewAI Raw Results: {results}")
@@ -180,11 +173,6 @@ def main():
         ]
     )
 
-    use_geospatial_filter = st.sidebar.checkbox("🔍 Use Geospatial Filter (Nearby Areas)")
-    latitudes = [8.3551545319759, 8.414619893463565, 8.438422207850575, 8.612380983078557]
-    longitudes = [77.03136608465745, 76.979652, 76.95568054232872, 76.83407053833807]
-    radius_km = st.sidebar.slider("Radius (km)", 1, 20, 5) if use_geospatial_filter else None
-
     search_params = {
         'location': location,
         'property_type': property_type,
@@ -196,7 +184,7 @@ def main():
 
     if st.sidebar.button("🔎 Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
-            df, excel_data = run_property_search(search_params, latitudes if use_geospatial_filter else None, longitudes if use_geospatial_filter else None, radius_km)
+            df, excel_data = run_property_search(search_params)
 
             if df is not None and not df.empty:
                 st.session_state.df = df
