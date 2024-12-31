@@ -1,5 +1,3 @@
-# app_crewai.py
-
 import os
 import sys
 import streamlit as st
@@ -49,103 +47,21 @@ logging.basicConfig(
     ]
 )
 
-def is_valid_url(url, retries=3, delay=2):
+def calculate_proximity_condition(latitudes, longitudes, radius_km=5):
     """
-    Validate URL with multiple retry attempts.
+    Generate a geospatial condition string for properties near specific lat/lon.
     """
-    for attempt in range(retries):
-        try:
-            response = requests.head(url, allow_redirects=True, timeout=5)
-            if response.status_code == 200:
-                return True
-            else:
-                logging.warning(f"URL check failed ({response.status_code}): {url}")
-        except requests.RequestException as e:
-            logging.warning(f"URL attempt {attempt + 1} failed: {e}")
-        time.sleep(delay)
-    return False
+    condition = " or ".join(
+        [
+            f"near latitude {lat} and longitude {lon} within {radius_km} km"
+            for lat, lon in zip(latitudes, longitudes)
+        ]
+    )
+    return condition
 
-def validate_and_normalize_link(link):
+def create_real_estate_crew(search_params, latitudes=None, longitudes=None, radius_km=5):
     """
-    Try to return a valid link. If invalid, return the original text.
-    """
-    link = link.strip()
-    # If link already starts with http or https, verify directly
-    if link.startswith('http://') or link.startswith('https://'):
-        if is_valid_url(link):
-            return link
-        else:
-            return link  # Return original text if invalid
-    else:
-        # If not starting with http(s), try prefixing with https://
-        potential_link = 'https://' + link
-        if is_valid_url(potential_link):
-            return potential_link
-        else:
-            # If still invalid, return original text
-            return link
-
-def extract_properties_from_crew_output(crew_output):
-    """
-    Robust property extraction with improved error handling.
-    """
-    try:
-        # Attempt to extract 'raw' output; adjust attribute names as necessary
-        results_text = str(getattr(crew_output, 'raw', getattr(crew_output, 'result', str(crew_output))))
-    except Exception as e:
-        logging.error(f"Output extraction error: {e}")
-        return []
-    
-    pattern = r'Title:\s*(.*?)\s*Link:\s*(.*?)\s*Snippet:\s*(.*?)\s*(?=Title:|$)'
-    matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
-    
-    properties = []
-    for match in matches:
-        try:
-            property_dict = {
-                'Property Name': match[0].strip(),
-                'Link': validate_and_normalize_link(match[1].strip()),
-                'Snippet': match[2].strip(),
-                'Price': None,
-                'Location': 'Trivandrum'
-            }
-            
-            # Extract Price from Snippet
-            price_match = re.search(r'₹\s?([\d,]+)', property_dict['Snippet'])
-            if price_match:
-                price_str = price_match.group(1).replace(',', '')
-                try:
-                    property_dict['Price'] = float(price_str)
-                except ValueError:
-                    property_dict['Price'] = None
-            
-            properties.append(property_dict)
-        except Exception as e:
-            logging.warning(f"Property processing error: {e}")
-    
-    return properties
-
-def save_to_excel(properties, filename='trivandrum_real_estate_properties.xlsx'):
-    """
-    Save properties to Excel with error handling.
-    """
-    try:
-        df = pd.DataFrame(properties)
-        
-        output = BytesIO()
-        df.to_excel(output, index=False, engine='openpyxl')
-        excel_data = output.getvalue()
-        
-        logging.info(f"Excel file created: {filename}")
-        return df, excel_data
-    
-    except Exception as e:
-        logging.error(f"Excel creation error: {e}")
-        return None, None
-
-def create_real_estate_crew(search_params):
-    """
-    Create CrewAI agents with enhanced, flexible search strategy.
+    Create CrewAI agents with geospatial filtering when latitude/longitude is provided.
     """
     openai_api_key = os.environ.get('OPENAI_API_KEY')
     serper_api_key = os.environ.get('SERPER_API_KEY')
@@ -156,6 +72,10 @@ def create_real_estate_crew(search_params):
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
+
+    geospatial_filter = ""
+    if latitudes and longitudes:
+        geospatial_filter = calculate_proximity_condition(latitudes, longitudes, radius_km)
 
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
@@ -169,7 +89,11 @@ def create_real_estate_crew(search_params):
     real_estate_agent = Agent(
         llm=llm,
         role="Real Estate Data Specialist",
-        goal=f"Find and compile a list of {property_type.lower()} properties for sale in {location} within the price range {price_range} (amounts in rupees).",
+        goal=(
+            f"Find and compile a list of {property_type.lower()} properties for sale "
+            f"in {location} within the price range {price_range} (amounts in rupees). "
+            f"{geospatial_filter}."
+        ),
         backstory=(
             "An experienced real estate analyst adept at gathering and verifying property data from multiple sources."
         ),
@@ -181,7 +105,8 @@ def create_real_estate_crew(search_params):
     research_task = Task(
         description=f"""
         Search for {property_type.lower()} properties for sale in {location}.
-        Ensure that properties have water views and are within the price range: {price_range} (amounts in rupees).
+        Ensure properties have water views, are within the price range {price_range} (amounts in rupees),
+        and meet the geospatial criteria: {geospatial_filter}.
         Use reputable real estate platforms and provide verified links.
         Format each property as follows:
 
@@ -201,41 +126,41 @@ def create_real_estate_crew(search_params):
 
     return crew
 
-def run_property_search(search_params):
+def run_property_search(search_params, latitudes=None, longitudes=None, radius_km=5):
     """
     Enhanced property search with robust error management.
     """
     try:
         logging.info("Initiating comprehensive property search")
-        
-        crew = create_real_estate_crew(search_params)
+
+        crew = create_real_estate_crew(search_params, latitudes, longitudes, radius_km)
         results = crew.kickoff()
-        
+
         logging.info(f"CrewAI Raw Results: {results}")
-        
+
         with st.expander("📄 Raw Search Results"):
             st.write(results)
-        
+
         properties = extract_properties_from_crew_output(results)
-        
+
         logging.info(f"Properties extracted: {len(properties)}")
-        
+
         if properties:
             df, excel_data = save_to_excel(properties)
             return df, excel_data
         else:
             logging.warning("No properties discovered in search results")
             return None, None
-    
+
     except Exception as e:
         logging.error(f"Comprehensive search failed: {e}", exc_info=True)
         return None, None
 
 def main():
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
-    st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
+    st.title("\ud83c\udfe1 Trivandrum Real Estate Intelligence Platform")
 
-    st.sidebar.header("🔍 Property Search Parameters")
+    st.sidebar.header("\ud83d\udd0d Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox(
         "Property Type", 
@@ -255,6 +180,11 @@ def main():
         ]
     )
 
+    use_geospatial_filter = st.sidebar.checkbox("\ud83d\udd0d Use Geospatial Filter (Nearby Areas)")
+    latitudes = [8.3551545319759, 8.414619893463565, 8.438422207850575, 8.612380983078557]
+    longitudes = [77.03136608465745, 76.979652, 76.95568054232872, 76.83407053833807]
+    radius_km = st.sidebar.slider("Radius (km)", 1, 20, 5) if use_geospatial_filter else None
+
     search_params = {
         'location': location,
         'property_type': property_type,
@@ -264,15 +194,14 @@ def main():
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    if st.sidebar.button("🔎 Search Properties"):
+    if st.sidebar.button("\ud83d\udd0e Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
-            df, excel_data = run_property_search(search_params)
-            
+            df, excel_data = run_property_search(search_params, latitudes if use_geospatial_filter else None, longitudes if use_geospatial_filter else None, radius_km)
+
             if df is not None and not df.empty:
                 st.session_state.df = df
-                st.success(f"✅ Found {len(df)} Properties!")
+                st.success(f"\u2705 Found {len(df)} Properties!")
                 
-                # Function to create clickable hyperlinks only if URL is valid
                 def make_hyperlink(url):
                     url = url.strip()
                     if url.startswith('http://') or url.startswith('https://'):
@@ -280,7 +209,7 @@ def main():
                     else:
                         return url
 
-                with st.expander("📊 Property Details"):
+                with st.expander("\ud83d\udcca Property Details"):
                     display_df = df.copy()
                     display_df['Property Link'] = display_df['Link'].apply(make_hyperlink)
                     display_df = display_df.drop(columns=['Link'])
@@ -291,15 +220,15 @@ def main():
 
                     html_table = display_df.to_html(escape=False, index=False)
                     st.markdown(html_table, unsafe_allow_html=True)
-                
+
                 st.download_button(
-                    label="📥 Download Property Data",
+                    label="\ud83d\udcc5 Download Property Data",
                     data=excel_data,
                     file_name='trivandrum_real_estate_properties.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
             else:
-                st.warning("⚠️ No properties found. Adjust search parameters.")
+                st.warning("\u26a0\ufe0f No properties found. Adjust search parameters.")
 
 if __name__ == "__main__":
     main()
