@@ -156,7 +156,7 @@ def create_real_estate_crew(search_params):
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
-    coordinates = search_params.get('coordinates')  # New parameter
+    coordinates = search_params.get('coordinates')  # New parameter (List of tuples)
 
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
@@ -169,10 +169,11 @@ def create_real_estate_crew(search_params):
 
     # Modify the goal based on whether coordinates are provided
     if coordinates:
-        coord_str = f"at latitude {coordinates[0]} and longitude {coordinates[1]}"
-        search_goal = f"Find and compile a list of {property_type.lower()} properties for sale in {location} {coord_str} within the price range {price_range} (amounts in rupees)."
+        coord_str = '; '.join([f"latitude {lat} and longitude {lng}" for lat, lng in coordinates])
+        search_goal = f"Find and compile a list of {property_type.lower()} properties for sale in {location} at the following coordinates: {coord_str} within the price range {price_range} (amounts in rupees)."
         task_description = f"""
-        Search for {property_type.lower()} properties for sale in {location} at latitude {coordinates[0]} and longitude {coordinates[1]}.
+        Search for {property_type.lower()} properties for sale in {location} at the following coordinates:
+        {', '.join([f"latitude {lat} and longitude {lng}" for lat, lng in coordinates])}.
         Ensure that properties have water views and are within the price range: {price_range} (amounts in rupees).
         Use reputable real estate platforms and provide verified links.
         Format each property as follows:
@@ -269,19 +270,30 @@ def main():
     else:
         # Step 2: Provide coordinate options
         coordinate_options = {
-            "Coordinate 1": (8.3551545319759, 77.03136608465745),
-            "Coordinate 2": (8.414619893463565, 76.979652),
-            "Coordinate 3": (8.438422207850575, 76.95568054232872),
-            "Coordinate 4": (8.612380983078557, 76.83407053833807)
+            "Coordinate Set 1": (8.3551545319759, 77.03136608465745),
+            "Coordinate Set 2": (8.414619893463565, 76.979652),
+            "Coordinate Set 3": (8.438422207850575, 76.95568054232872),
+            "Coordinate Set 4": (8.612380983078557, 76.83407053833807)
         }
 
-        coord_choice = st.sidebar.selectbox(
-            "Select Specific Coordinates",
-            list(coordinate_options.keys())
-        )
+        # Since the user wants to search across all four coordinates simultaneously,
+        # we'll assume that selecting "By Specific Coordinates" implies using all predefined coordinates.
+        # Alternatively, you can allow multiple selections if needed.
 
-        coordinates = coordinate_options[coord_choice]
+        # Option 1: Automatically use all coordinates when "By Specific Coordinates" is selected
+        coordinates = list(coordinate_options.values())
         location = "Trivandrum"  # Default location
+
+        # Option 2: Allow users to select multiple coordinates (Uncomment if preferred)
+        """
+        selected_coords_keys = st.sidebar.multiselect(
+            "Select Specific Coordinates",
+            list(coordinate_options.keys()),
+            default=list(coordinate_options.keys())
+        )
+        coordinates = [coordinate_options[key] for key in selected_coords_keys] if selected_coords_keys else None
+        location = "Trivandrum"
+        """
 
     property_type = st.sidebar.selectbox(
         "Property Type", 
@@ -305,7 +317,7 @@ def main():
         'location': location,
         'property_type': property_type,
         'price_range': price_range,
-        'coordinates': coordinates  # Pass coordinates if any
+        'coordinates': coordinates  # Pass list of coordinates if any
     }
 
     if 'df' not in st.session_state:
