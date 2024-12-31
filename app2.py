@@ -158,9 +158,9 @@ def run_property_search(search_params, latitudes=None, longitudes=None, radius_k
 
 def main():
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
-    st.title("\ud83c\udfe1 Trivandrum Real Estate Intelligence Platform")
+    st.title("🏠 Trivandrum Real Estate Intelligence Platform")
 
-    st.sidebar.header("\ud83d\udd0d Property Search Parameters")
+    st.sidebar.header("🔍 Property Search Parameters")
     location = st.sidebar.text_input("Location", "Trivandrum")
     property_type = st.sidebar.selectbox(
         "Property Type", 
@@ -180,7 +180,7 @@ def main():
         ]
     )
 
-    use_geospatial_filter = st.sidebar.checkbox("\ud83d\udd0d Use Geospatial Filter (Nearby Areas)")
+    use_geospatial_filter = st.sidebar.checkbox("🔍 Use Geospatial Filter (Nearby Areas)")
     latitudes = [8.3551545319759, 8.414619893463565, 8.438422207850575, 8.612380983078557]
     longitudes = [77.03136608465745, 76.979652, 76.95568054232872, 76.83407053833807]
     radius_km = st.sidebar.slider("Radius (km)", 1, 20, 5) if use_geospatial_filter else None
@@ -194,13 +194,13 @@ def main():
     if 'df' not in st.session_state:
         st.session_state.df = None
 
-    if st.sidebar.button("\ud83d\udd0e Search Properties"):
+    if st.sidebar.button("🔎 Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
             df, excel_data = run_property_search(search_params, latitudes if use_geospatial_filter else None, longitudes if use_geospatial_filter else None, radius_km)
 
             if df is not None and not df.empty:
                 st.session_state.df = df
-                st.success(f"\u2705 Found {len(df)} Properties!")
+                st.success(f"✅ Found {len(df)} Properties!")
                 
                 def make_hyperlink(url):
                     url = url.strip()
@@ -209,7 +209,7 @@ def main():
                     else:
                         return url
 
-                with st.expander("\ud83d\udcca Property Details"):
+                with st.expander("📊 Property Details"):
                     display_df = df.copy()
                     display_df['Property Link'] = display_df['Link'].apply(make_hyperlink)
                     display_df = display_df.drop(columns=['Link'])
@@ -222,13 +222,13 @@ def main():
                     st.markdown(html_table, unsafe_allow_html=True)
 
                 st.download_button(
-                    label="\ud83d\udcc5 Download Property Data",
+                    label="📥 Download Property Data",
                     data=excel_data,
                     file_name='trivandrum_real_estate_properties.xlsx',
                     mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 )
             else:
-                st.warning("\u26a0\ufe0f No properties found. Adjust search parameters.")
+                st.warning("⚠️ No properties found. Adjust search parameters.")
 
 if __name__ == "__main__":
     main()
