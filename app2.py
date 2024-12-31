@@ -1,3 +1,5 @@
+# app_crewai.py
+
 import os
 import sys
 import streamlit as st
@@ -47,9 +49,103 @@ logging.basicConfig(
     ]
 )
 
-def create_real_estate_crew(search_params, latitudes=None, longitudes=None):
+def is_valid_url(url, retries=3, delay=2):
     """
-    Create CrewAI agents for specific waterfront property search in predefined locations.
+    Validate URL with multiple retry attempts.
+    """
+    for attempt in range(retries):
+        try:
+            response = requests.head(url, allow_redirects=True, timeout=5)
+            if response.status_code == 200:
+                return True
+            else:
+                logging.warning(f"URL check failed ({response.status_code}): {url}")
+        except requests.RequestException as e:
+            logging.warning(f"URL attempt {attempt + 1} failed: {e}")
+        time.sleep(delay)
+    return False
+
+def validate_and_normalize_link(link):
+    """
+    Try to return a valid link. If invalid, return the original text.
+    """
+    link = link.strip()
+    # If link already starts with http or https, verify directly
+    if link.startswith('http://') or link.startswith('https://'):
+        if is_valid_url(link):
+            return link
+        else:
+            return link  # Return original text if invalid
+    else:
+        # If not starting with http(s), try prefixing with https://
+        potential_link = 'https://' + link
+        if is_valid_url(potential_link):
+            return potential_link
+        else:
+            # If still invalid, return original text
+            return link
+
+def extract_properties_from_crew_output(crew_output):
+    """
+    Robust property extraction with improved error handling.
+    """
+    try:
+        # Attempt to extract 'raw' output; adjust attribute names as necessary
+        results_text = str(getattr(crew_output, 'raw', getattr(crew_output, 'result', str(crew_output))))
+    except Exception as e:
+        logging.error(f"Output extraction error: {e}")
+        return []
+    
+    pattern = r'Title:\s*(.*?)\s*Link:\s*(.*?)\s*Snippet:\s*(.*?)\s*(?=Title:|$)'
+    matches = re.findall(pattern, results_text, re.DOTALL | re.MULTILINE)
+    
+    properties = []
+    for match in matches:
+        try:
+            property_dict = {
+                'Property Name': match[0].strip(),
+                'Link': validate_and_normalize_link(match[1].strip()),
+                'Snippet': match[2].strip(),
+                'Price': None,
+                'Location': 'Trivandrum'
+            }
+            
+            # Extract Price from Snippet
+            price_match = re.search(r'₹\s?([\d,]+)', property_dict['Snippet'])
+            if price_match:
+                price_str = price_match.group(1).replace(',', '')
+                try:
+                    property_dict['Price'] = float(price_str)
+                except ValueError:
+                    property_dict['Price'] = None
+            
+            properties.append(property_dict)
+        except Exception as e:
+            logging.warning(f"Property processing error: {e}")
+    
+    return properties
+
+def save_to_excel(properties, filename='trivandrum_real_estate_properties.xlsx'):
+    """
+    Save properties to Excel with error handling.
+    """
+    try:
+        df = pd.DataFrame(properties)
+        
+        output = BytesIO()
+        df.to_excel(output, index=False, engine='openpyxl')
+        excel_data = output.getvalue()
+        
+        logging.info(f"Excel file created: {filename}")
+        return df, excel_data
+    
+    except Exception as e:
+        logging.error(f"Excel creation error: {e}")
+        return None, None
+
+def create_real_estate_crew(search_params):
+    """
+    Create CrewAI agents with enhanced, flexible search strategy.
     """
     openai_api_key = os.environ.get('OPENAI_API_KEY')
     serper_api_key = os.environ.get('SERPER_API_KEY')
@@ -60,13 +156,7 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None):
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
-
-    predefined_locations = (
-        "near latitude 8.3551545319759 and longitude 77.03136608465745, "
-        "near latitude 8.414619893463565 and longitude 76.979652, "
-        "near latitude 8.438422207850575 and longitude 76.95568054232872, "
-        "near latitude 8.612380983078557 and longitude 76.83407053833807"
-    )
+    coordinates = search_params.get('coordinates')  # New parameter
 
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
@@ -77,13 +167,37 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None):
 
     search = SerperDevTool(api_key=serper_api_key)
 
+    # Modify the goal based on whether coordinates are provided
+    if coordinates:
+        coord_str = f"at latitude {coordinates[0]} and longitude {coordinates[1]}"
+        search_goal = f"Find and compile a list of {property_type.lower()} properties for sale in {location} {coord_str} within the price range {price_range} (amounts in rupees)."
+        task_description = f"""
+        Search for {property_type.lower()} properties for sale in {location} at latitude {coordinates[0]} and longitude {coordinates[1]}.
+        Ensure that properties have water views and are within the price range: {price_range} (amounts in rupees).
+        Use reputable real estate platforms and provide verified links.
+        Format each property as follows:
+
+        'Title: [Name]
+        Link: [Verified Link]
+        Snippet: [Description] (price in rupees)'
+        """
+    else:
+        search_goal = f"Find and compile a list of {property_type.lower()} properties for sale in {location} within the price range {price_range} (amounts in rupees)."
+        task_description = f"""
+        Search for {property_type.lower()} properties for sale in {location}.
+        Ensure that properties have water views and are within the price range: {price_range} (amounts in rupees).
+        Use reputable real estate platforms and provide verified links.
+        Format each property as follows:
+
+        'Title: [Name]
+        Link: [Verified Link]
+        Snippet: [Description] (price in rupees)'
+        """
+
     real_estate_agent = Agent(
         llm=llm,
         role="Real Estate Data Specialist",
-        goal=(
-            f"Find and compile a list of {property_type.lower()} properties for sale "
-            f"in {location} within the price range {price_range} (amounts in rupees), specifically in these locations: {predefined_locations}."
-        ),
+        goal=search_goal,
         backstory=(
             "An experienced real estate analyst adept at gathering and verifying property data from multiple sources."
         ),
@@ -93,17 +207,7 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None):
     )
 
     research_task = Task(
-        description=f"""
-        Search for {property_type.lower()} properties for sale in {location}.
-        Ensure properties have water views, are within the price range {price_range} (amounts in rupees),
-        and are located in the following predefined areas: {predefined_locations}.
-        Use reputable real estate platforms and provide verified links.
-        Format each property as follows:
-
-        'Title: [Name]
-        Link: [Verified Link]
-        Snippet: [Description] (price in rupees)'
-        """,
+        description=task_description,
         expected_output="A list of at least 10 verified waterfront properties matching the search criteria.",
         agent=real_estate_agent,
     )
@@ -118,43 +222,67 @@ def create_real_estate_crew(search_params, latitudes=None, longitudes=None):
 
 def run_property_search(search_params):
     """
-    Enhanced property search with predefined locations.
+    Enhanced property search with robust error management.
     """
     try:
         logging.info("Initiating comprehensive property search")
-
-        latitudes = [8.3551545319759, 8.414619893463565, 8.438422207850575, 8.612380983078557]
-        longitudes = [77.03136608465745, 76.979652, 76.95568054232872, 76.83407053833807]
-
-        crew = create_real_estate_crew(search_params, latitudes, longitudes)
+        
+        crew = create_real_estate_crew(search_params)
         results = crew.kickoff()
-
+        
         logging.info(f"CrewAI Raw Results: {results}")
-
+        
         with st.expander("📄 Raw Search Results"):
             st.write(results)
-
+        
         properties = extract_properties_from_crew_output(results)
-
+        
         logging.info(f"Properties extracted: {len(properties)}")
-
+        
         if properties:
             df, excel_data = save_to_excel(properties)
             return df, excel_data
         else:
             logging.warning("No properties discovered in search results")
             return None, None
-
+    
     except Exception as e:
         logging.error(f"Comprehensive search failed: {e}", exc_info=True)
         return None, None
 
 def main():
     st.set_page_config(page_title="Trivandrum Real Estate Intelligence", layout="wide")
-    st.title("🏠 Trivandrum Real Estate Intelligence Platform")
+    st.title("🏘️ Trivandrum Real Estate Intelligence Platform")
 
     st.sidebar.header("🔍 Property Search Parameters")
-    location = st.sidebar.text_input("Location", "Trivandrum")
+
+    # Step 1: Add search method selection
+    search_method = st.sidebar.radio(
+        "Choose Search Method:",
+        ("By Location Name", "By Specific Coordinates")
+    )
+
+    if search_method == "By Location Name":
+        # Existing location input
+        location = st.sidebar.text_input("Location", "Trivandrum")
+        coordinates = None  # No coordinates selected
+    else:
+        # Step 2: Provide coordinate options
+        coordinate_options = {
+            "Coordinate 1": (8.3551545319759, 77.03136608465745),
+            "Coordinate 2": (8.414619893463565, 76.979652),
+            "Coordinate 3": (8.438422207850575, 76.95568054232872),
+            "Coordinate 4": (8.612380983078557, 76.83407053833807)
+        }
+
+        coord_choice = st.sidebar.selectbox(
+            "Select Specific Coordinates",
+            list(coordinate_options.keys())
+        )
+
+        coordinates = coordinate_options[coord_choice]
+        location = "Trivandrum"  # Default location
+
     property_type = st.sidebar.selectbox(
         "Property Type", 
         ["Waterfront", "Apartment", "Villa", "Commercial", "Land"]
@@ -176,7 +304,8 @@ def main():
     search_params = {
         'location': location,
         'property_type': property_type,
-        'price_range': price_range
+        'price_range': price_range,
+        'coordinates': coordinates  # Pass coordinates if any
     }
 
     if 'df' not in st.session_state:
@@ -185,11 +314,12 @@ def main():
     if st.sidebar.button("🔎 Search Properties"):
         with st.spinner("Conducting comprehensive property search..."):
             df, excel_data = run_property_search(search_params)
-
+            
             if df is not None and not df.empty:
                 st.session_state.df = df
                 st.success(f"✅ Found {len(df)} Properties!")
                 
+                # Function to create clickable hyperlinks only if URL is valid
                 def make_hyperlink(url):
                     url = url.strip()
                     if url.startswith('http://') or url.startswith('https://'):
@@ -208,7 +338,7 @@ def main():
 
                     html_table = display_df.to_html(escape=False, index=False)
                     st.markdown(html_table, unsafe_allow_html=True)
-
+                
                 st.download_button(
                     label="📥 Download Property Data",
                     data=excel_data,
