@@ -156,7 +156,7 @@ def create_real_estate_crew(search_params):
     location = search_params.get('location', 'Trivandrum')
     property_type = search_params.get('property_type', 'Waterfront')
     price_range = search_params.get('price_range', 'Any')
-    coordinates = search_params.get('coordinates')  # New parameter (List of tuples)
+    specific_locations = search_params.get('specific_locations')  # List of locations or None
 
     llm = ChatOpenAI(
         openai_api_key=openai_api_key,
@@ -167,13 +167,13 @@ def create_real_estate_crew(search_params):
 
     search = SerperDevTool(api_key=serper_api_key)
 
-    # Modify the goal based on whether coordinates are provided
-    if coordinates:
-        coord_str = '; '.join([f"latitude {lat} and longitude {lng}" for lat, lng in coordinates])
-        search_goal = f"Find and compile a list of {property_type.lower()} properties for sale in {location} at the following coordinates: {coord_str} within the price range {price_range} (amounts in rupees)."
+    # Modify the goal based on whether specific locations are provided
+    if specific_locations:
+        locations_str = ', '.join(specific_locations)
+        search_goal = f"Find and compile a list of {property_type.lower()} properties for sale in {locations_str}, Trivandrum within the price range {price_range} (amounts in rupees)."
         task_description = f"""
-        Search for {property_type.lower()} properties for sale in {location} at the following coordinates:
-        {', '.join([f"latitude {lat} and longitude {lng}" for lat, lng in coordinates])}.
+        Search for {property_type.lower()} properties for sale in the following locations within Trivandrum:
+        {locations_str}.
         Ensure that properties have water views and are within the price range: {price_range} (amounts in rupees).
         Use reputable real estate platforms and provide verified links.
         Format each property as follows:
@@ -244,8 +244,30 @@ def run_property_search(search_params):
             df, excel_data = save_to_excel(properties)
             return df, excel_data
         else:
-            logging.warning("No properties discovered in search results")
-            return None, None
+            # Fallback: If no properties found and specific_locations are used, perform individual searches
+            if search_params.get('specific_locations'):
+                logging.info("No properties found in combined search. Initiating individual searches for each location.")
+                individual_properties = []
+                for loc in search_params['specific_locations']:
+                    individual_search_params = search_params.copy()
+                    individual_search_params['specific_locations'] = [loc]
+                    crew = create_real_estate_crew(individual_search_params)
+                    individual_results = crew.kickoff()
+                    logging.info(f"CrewAI Raw Results for {loc}: {individual_results}")
+                    extracted = extract_properties_from_crew_output(individual_results)
+                    individual_properties.extend(extracted)
+                
+                if individual_properties:
+                    properties = individual_properties
+                    logging.info(f"Aggregated Properties extracted: {len(properties)}")
+                    df, excel_data = save_to_excel(properties)
+                    return df, excel_data
+                else:
+                    logging.warning("No properties found in individual searches as well.")
+                    return None, None
+            else:
+                logging.warning("No properties discovered in search results")
+                return None, None
     
     except Exception as e:
         logging.error(f"Comprehensive search failed: {e}", exc_info=True)
@@ -257,43 +279,39 @@ def main():
 
     st.sidebar.header("🔍 Property Search Parameters")
 
-    # Step 1: Add search method selection
-    search_method = st.sidebar.radio(
-        "Choose Search Method:",
-        ("By Location Name", "By Specific Coordinates")
+    # Step 1: Add search method selection with three options
+    search_scope = st.sidebar.radio(
+        "Choose Search Scope:",
+        ("Trivandrum as a Whole", "All 4 Locations Combined", "Individual Locations")
     )
 
-    if search_method == "By Location Name":
-        # Existing location input
-        location = st.sidebar.text_input("Location", "Trivandrum")
-        coordinates = None  # No coordinates selected
-    else:
-        # Step 2: Provide coordinate options
-        coordinate_options = {
-            "Coordinate Set 1": (8.3551545319759, 77.03136608465745),
-            "Coordinate Set 2": (8.414619893463565, 76.979652),
-            "Coordinate Set 3": (8.438422207850575, 76.95568054232872),
-            "Coordinate Set 4": (8.612380983078557, 76.83407053833807)
-        }
+    # Define the four specific locations
+    specific_locations_options = [
+        "Kottukal",
+        "Kovalam",
+        "Thiruvallam",
+        "Murukkumpuzha"
+    ]
 
-        # Since the user wants to search across all four coordinates simultaneously,
-        # we'll assume that selecting "By Specific Coordinates" implies using all predefined coordinates.
-        # Alternatively, you can allow multiple selections if needed.
-
-        # Option 1: Automatically use all coordinates when "By Specific Coordinates" is selected
-        coordinates = list(coordinate_options.values())
-        location = "Trivandrum"  # Default location
-
-        # Option 2: Allow users to select multiple coordinates (Uncomment if preferred)
-        """
-        selected_coords_keys = st.sidebar.multiselect(
-            "Select Specific Coordinates",
-            list(coordinate_options.keys()),
-            default=list(coordinate_options.keys())
-        )
-        coordinates = [coordinate_options[key] for key in selected_coords_keys] if selected_coords_keys else None
+    if search_scope == "Trivandrum as a Whole":
         location = "Trivandrum"
-        """
+        specific_locations = None
+    elif search_scope == "All 4 Locations Combined":
+        location = "Trivandrum"
+        specific_locations = specific_locations_options  # List of all four locations
+    else:  # "Individual Locations"
+        selected_locations = st.sidebar.multiselect(
+            "Select Locations",
+            specific_locations_options,
+            default=[specific_locations_options[0]]
+        )
+        if selected_locations:
+            location = "Trivandrum"
+            specific_locations = selected_locations
+        else:
+            st.warning("⚠️ Please select at least one location.")
+            location = "Trivandrum"
+            specific_locations = None
 
     property_type = st.sidebar.selectbox(
         "Property Type", 
@@ -317,7 +335,7 @@ def main():
         'location': location,
         'property_type': property_type,
         'price_range': price_range,
-        'coordinates': coordinates  # Pass list of coordinates if any
+        'specific_locations': specific_locations  # Pass list of specific locations or None
     }
 
     if 'df' not in st.session_state:
